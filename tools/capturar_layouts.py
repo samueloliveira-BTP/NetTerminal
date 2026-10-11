@@ -4,10 +4,8 @@ Abre o app com OLTs FALSAS (servidor SSH local, pasta de dados temporária) e
 captura SÓ a janela do app (PrintWindow) em cada formato: 1, 2 lado a lado,
 3, 4, 2 empilhados e 7 abas. Nada da área de trabalho é capturado.
 
-Uso (na raiz do projeto):
-    .venv\\Scripts\\python.exe tools\\capturar_layouts.py . capturas
-
-As imagens ficam em ./capturas (não versionar).
+Uso (na raiz do projeto), gravando as imagens FORA do repositório:
+    .venv\\Scripts\\python.exe tools\\capturar_layouts.py . %TEMP%\\netterminal_capturas
 """
 import ctypes
 import os

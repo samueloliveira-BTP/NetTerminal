@@ -31,8 +31,9 @@ class _InterfaceSSH(paramiko.ServerInterface):
 class ServidorSSHFake:
     """Aceita conexões e responde "eco:<linha>" para cada linha recebida."""
 
-    def __init__(self, chave_host=None):
+    def __init__(self, chave_host=None, classe_transporte=paramiko.Transport):
         self.chave_host = chave_host or paramiko.RSAKey.generate(2048)
+        self.classe_transporte = classe_transporte
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind(("127.0.0.1", 0))
@@ -50,7 +51,7 @@ class ServidorSSHFake:
             threading.Thread(target=self._atender, args=(cliente,), daemon=True).start()
 
     def _atender(self, cliente):
-        transporte = paramiko.Transport(cliente)
+        transporte = self.classe_transporte(cliente)
         transporte.add_server_key(self.chave_host)
         try:
             transporte.start_server(server=_InterfaceSSH())
@@ -96,6 +97,21 @@ class ServidorSSHFake:
     def parar(self):
         self._rodando = False
         self.sock.close()
+
+
+def criar_servidor_ssh_antigo():
+    """Servidor que imita a ZTE antiga real (banner ZTE_SSH.1.0): só oferece
+    chave ssh-rsa/SHA-1, cifra aes128-cbc e MAC hmac-sha1."""
+    from netterminal.net.ssh_legado import RSAKeyLegado, TransportLegado
+
+    class TransportZTEAntiga(TransportLegado):
+        _preferred_keys = ("ssh-rsa",)
+        _preferred_ciphers = ("aes128-cbc",)
+        _preferred_macs = ("hmac-sha1",)
+        _preferred_kex = ("diffie-hellman-group14-sha256",)
+
+    chave = RSAKeyLegado(key=paramiko.RSAKey.generate(2048).key)
+    return ServidorSSHFake(chave_host=chave, classe_transporte=TransportZTEAntiga)
 
 
 class ServidorTelnetFake:

@@ -18,14 +18,14 @@ from netterminal.security.crypto import parece_token_fernet
 
 log = logging.getLogger(__name__)
 
-_COLUNAS_EQUIP = "id, nome, ip, protocolo, porta, grupo, manual_login, marca, nota"
+_COLUNAS_EQUIP = "id, nome, ip, protocolo, porta, grupo, manual_login, marca, nota, ssh_legado"
 
 
 def _linha_para_equipamento(r):
     return Equipamento(
         id=int(r[0]), nome=r[1], ip=r[2], protocolo=r[3], porta=int(r[4]),
         grupo=r[5] or GRUPO_PADRAO, login_manual=str(r[6]) in ("1", "True"),
-        marca=r[7] or "Outra", nota=r[8] or "",
+        marca=r[7] or "Outra", nota=r[8] or "", ssh_legado=bool(r[9]),
     )
 
 
@@ -93,6 +93,7 @@ class Database:
                 "ALTER TABLE olts ADD COLUMN manual_login INTEGER DEFAULT 0",
                 "ALTER TABLE olts ADD COLUMN marca TEXT DEFAULT 'Outra'",
                 "ALTER TABLE olts ADD COLUMN nota TEXT DEFAULT ''",
+                "ALTER TABLE olts ADD COLUMN ssh_legado INTEGER DEFAULT 0",
                 "ALTER TABLE status_olts ADD COLUMN latencia_ms REAL",
             ):
                 try:
@@ -148,18 +149,22 @@ class Database:
     def adicionar_equipamento(self, eq):
         with self._lock:
             cur = self.conn.execute(
-                "INSERT INTO olts (nome, ip, protocolo, usuario, senha, porta, grupo, manual_login, marca, nota) "
-                "VALUES (?, ?, ?, '', '', ?, ?, ?, ?, ?)",
+                "INSERT INTO olts (nome, ip, protocolo, usuario, senha, porta, grupo, manual_login, marca, nota, "
+                "ssh_legado) VALUES (?, ?, ?, '', '', ?, ?, ?, ?, ?, ?)",
                 (eq.nome, eq.ip, eq.protocolo, int(eq.porta), eq.grupo or GRUPO_PADRAO,
-                 1 if eq.login_manual else 0, eq.marca, eq.nota))
+                 1 if eq.login_manual else 0, eq.marca, eq.nota, 1 if eq.ssh_legado else 0))
             self.conn.commit()
             return cur.lastrowid
 
     def atualizar_equipamento(self, eq):
         self._executar(
-            "UPDATE olts SET nome=?, ip=?, protocolo=?, porta=?, grupo=?, manual_login=?, marca=?, nota=? WHERE id=?",
+            "UPDATE olts SET nome=?, ip=?, protocolo=?, porta=?, grupo=?, manual_login=?, marca=?, nota=?, "
+            "ssh_legado=? WHERE id=?",
             (eq.nome, eq.ip, eq.protocolo, int(eq.porta), eq.grupo or GRUPO_PADRAO,
-             1 if eq.login_manual else 0, eq.marca, eq.nota, eq.id), commit=True)
+             1 if eq.login_manual else 0, eq.marca, eq.nota, 1 if eq.ssh_legado else 0, eq.id), commit=True)
+
+    def definir_ssh_legado(self, equip_id, ativo):
+        self._executar("UPDATE olts SET ssh_legado=? WHERE id=?", (1 if ativo else 0, equip_id), commit=True)
 
     def excluir_equipamentos(self, ids):
         with self._lock:

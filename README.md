@@ -180,6 +180,8 @@ Ficam em `%USERPROFILE%\.olt_manager\`:
 |---|---|
 | Senhas salvas | Fernet (AES-128 + HMAC). A chave mestra é protegida pelo **DPAPI**: só abre com o mesmo usuário do Windows. |
 | SSH | Verificação de chave de host (TOFU). Chave alterada **bloqueia** a conexão até o técnico confirmar. |
+| SSH legado | Algoritmos antigos (`ssh-rsa`/SHA-1) só para equipamentos marcados, com confirmação do técnico e registro no log; nunca alteram as demais conexões (`net/ssh_legado.py`). |
+| Monitor de status | Ping ICMP — não abre sessões na porta de login, então não aciona o bloqueio anti-força-bruta dos equipamentos. |
 | Telnet | Aviso de texto claro; usuário e senha só são enviados quando o equipamento pede. |
 | Auditoria | Usuário real (`usuario@maquina`), senhas/communities mascaradas, digitação em prompt de senha nunca é gravada; envio opcional para syslog central. |
 | Inatividade | Sessão encerrada após `SESSION_IDLE_TIMEOUT_MIN` (padrão 10 min). |

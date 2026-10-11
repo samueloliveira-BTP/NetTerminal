@@ -91,6 +91,9 @@ SCROLLBACK_LINHAS = max(1000, env_int("TERMINAL_SCROLLBACK_LINES", 20000))
 MONITOR_INTERVALO_SEG = max(5, env_int("MONITOR_INTERVAL_SEC", 15))
 MONITOR_WORKERS = max(1, env_int("MONITOR_WORKERS", 32))
 MONITOR_TIMEOUT_SEG = 1.5
+# "icmp" (padrão, ping — não aciona bloqueio anti-força-bruta dos equipamentos)
+# ou "tcp" (abre conexão na porta de login, como nas versões antigas)
+MONITOR_METODO = "tcp" if env_str("MONITOR_METHOD", "icmp").strip().lower() == "tcp" else "icmp"
 
 # Logs e auditoria
 LOG_LIMITE_BYTES = 5 * 1024 * 1024

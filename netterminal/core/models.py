@@ -21,6 +21,7 @@ class Equipamento:
     login_manual: bool = False
     marca: str = "Outra"
     nota: str = ""
+    ssh_legado: bool = False  # aceita ssh-rsa/SHA-1 (equipamentos antigos); ver net/ssh_legado.py
 
     @property
     def rotulo(self):

@@ -66,7 +66,8 @@ def exportar(caminho, db, secoes):
                                 for marca, tipos in db.listar_modelos_onu().items() for tipo, cmd in tipos.items()]
     if "equipamentos" in secoes:
         dados["equipamentos"] = [{"nome": e.nome, "ip": e.ip, "protocolo": e.protocolo, "porta": e.porta,
-                                  "grupo": e.grupo, "marca": e.marca, "nota": e.nota, "login_manual": e.login_manual}
+                                  "grupo": e.grupo, "marca": e.marca, "nota": e.nota, "login_manual": e.login_manual,
+                                  "ssh_legado": e.ssh_legado}
                                  for e in db.listar_equipamentos()]
     with open(caminho, "w", encoding="utf-8") as f:
         json.dump(dados, f, ensure_ascii=False, indent=2)
@@ -173,7 +174,7 @@ def importar(dados, db, secoes, substituir_destaque=False):
             db.adicionar_equipamento(Equipamento(
                 None, nome, ip, protocolo, porta, texto_limpo(item.get("grupo")) or GRUPO_PADRAO,
                 bool(item.get("login_manual")), marca if marca in MARCAS else "Outra",
-                str(item.get("nota") or "")[:2000]))
+                str(item.get("nota") or "")[:2000], bool(item.get("ssh_legado"))))
             existentes.add(ip)
             ins += 1
         res.contagens["equipamentos"] = f"{ins} inserido(s), {ign} IP(s) já existiam"

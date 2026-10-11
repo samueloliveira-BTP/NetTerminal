@@ -10,6 +10,19 @@
   terminal visível em vez de ocupar o painel livre.
 - O terminal não força mais uma altura mínima (evitava que 4 painéis com
   fonte grande coubessem na tela).
+- **Monitor de status por ping (ICMP)** em vez de abrir conexão na porta de
+  login a cada 15 s. O método antigo fazia equipamentos Huawei bloquearem o
+  IP do técnico ("The IP has been blocked and you cannot log on it") e enchia
+  os logs das OLTs de conexões sem login. Usa a API de ping do Windows (não
+  precisa de administrador). `MONITOR_METHOD=tcp` no `.env` volta ao antigo;
+  IPv6 usa TCP automaticamente.
+- **SSH legado por equipamento** para OLTs de firmware antigo que só aceitam
+  chave `ssh-rsa` (SHA-1) — removida dos padrões do paramiko 4+. Ao falhar com
+  "no acceptable host key", o app pergunta se libera SOMENTE aquele
+  equipamento (também em Editar equipamento). Continua cifrado e com
+  verificação de chave; as demais conexões não mudam. No modo legado, a troca
+  de chaves prefere `group14-sha256` (a ZTE_SSH.1.0 anuncia `group16` mas
+  derruba a conexão quando ele é escolhido).
 - Distribuição **privada**: o build gera o `.msi` na Release do repositório
   privado; a equipe recebe o instalador por canal interno, com SHA-256.
 - Novo: *Ajuda → Verificar atualizações agora*.

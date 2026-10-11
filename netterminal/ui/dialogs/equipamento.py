@@ -10,7 +10,7 @@ from netterminal.ui.utils import msgbox, nova_janela
 
 def abrir(app, equipamento=None):
     editando = equipamento is not None
-    top = nova_janela(app, "Editar Equipamento" if editando else "Novo Equipamento", "360x620")
+    top = nova_janela(app, "Editar Equipamento" if editando else "Novo Equipamento", "380x660")
 
     def rotulo(texto):
         ctk.CTkLabel(top, text=texto).pack(anchor="w", padx=20, pady=(6, 0))
@@ -41,7 +41,10 @@ def abrir(app, equipamento=None):
     combo_proto.configure(command=ao_trocar_proto)
 
     chk_var = tk.IntVar()
-    ctk.CTkCheckBox(top, text="Login Manual (não usar credencial global)", variable=chk_var).pack(anchor="w", padx=20, pady=15)
+    ctk.CTkCheckBox(top, text="Login Manual (não usar credencial global)", variable=chk_var).pack(anchor="w", padx=20, pady=(15, 4))
+    var_legado = tk.IntVar()
+    ctk.CTkCheckBox(top, text="SSH legado (ssh-rsa/SHA-1 — só p/ equipamento antigo)",
+                    variable=var_legado).pack(anchor="w", padx=20, pady=(4, 12))
     rotulo("Nota (opcional):")
     entry_nota = ctk.CTkTextbox(top, height=70)
     entry_nota.pack(fill="x", padx=20, pady=(0, 10))
@@ -54,6 +57,7 @@ def abrir(app, equipamento=None):
         combo_proto.set(equipamento.protocolo)
         entry_porta.insert(0, str(equipamento.porta))
         chk_var.set(1 if equipamento.login_manual else 0)
+        var_legado.set(1 if equipamento.ssh_legado else 0)
         if equipamento.nota:
             entry_nota.insert("1.0", equipamento.nota)
     else:
@@ -81,6 +85,7 @@ def abrir(app, equipamento=None):
         novo = Equipamento(
             id=equipamento.id if editando else None, nome=nome, ip=ip, protocolo=combo_proto.get(),
             porta=porta, grupo=texto_limpo(combo_grupo.get()) or "Geral", login_manual=bool(chk_var.get()),
+            ssh_legado=bool(var_legado.get()),
             marca=combo_marca.get(), nota=entry_nota.get("1.0", "end-1c").strip()[:2000])
         if editando:
             app.db.atualizar_equipamento(novo)

@@ -1,9 +1,13 @@
-"""Monitor de status: testa periodicamente se a porta de cada equipamento
-responde e mede a latência da conexão TCP.
+"""Monitor de status: verifica periodicamente se cada equipamento responde
+e mede a latência.
 
-Os testes rodam em paralelo (pool de threads). Antes eram sequenciais com
-1,5 s de timeout cada: com 30 equipamentos fora do ar, um "ciclo de 15 s"
-levava mais de 1 minuto.
+Método padrão: PING ICMP (net/icmp.py). O método antigo — abrir e fechar uma
+conexão TCP na porta de login a cada ciclo — fazia equipamentos Huawei
+bloquearem o IP do técnico por suspeita de força bruta, e enchia os logs das
+OLTs de conexões sem login. TCP continua disponível como alternativa
+(MONITOR_METHOD=tcp no .env) e é usado automaticamente para IPv6.
+
+Os testes rodam em paralelo (pool de threads).
 """
 import logging
 import socket
@@ -11,11 +15,13 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+from netterminal.net import icmp
+
 log = logging.getLogger(__name__)
 
 
 def testar_porta(ip, porta, timeout):
-    """Devolve (online: bool, latencia_ms: float | None)."""
+    """Teste TCP. Devolve (online: bool, latencia_ms: float | None)."""
     inicio = time.perf_counter()
     try:
         with socket.create_connection((ip, int(porta)), timeout=timeout):
@@ -24,14 +30,25 @@ def testar_porta(ip, porta, timeout):
         return False, None
 
 
+def testar_equipamento(ip, porta, timeout, metodo="icmp"):
+    """Ping ICMP quando possível; TCP se configurado ou se o ICMP não se aplica."""
+    if metodo == "icmp" and icmp.disponivel_para(ip):
+        try:
+            return icmp.ping(ip, int(timeout * 1000))
+        except OSError as e:
+            log.debug(f"Ping ICMP indisponível para {ip} ({e}); usando TCP.")
+    return testar_porta(ip, porta, timeout)
+
+
 class MonitorStatus:
-    def __init__(self, db, intervalo, workers, timeout, ao_atualizar=None):
+    def __init__(self, db, intervalo, workers, timeout, ao_atualizar=None, metodo="icmp"):
         """ao_atualizar é chamado na thread do monitor ao fim de cada ciclo —
         quem usa na interface deve repassar para a thread principal (after)."""
         self._db = db
         self._intervalo = intervalo
         self._workers = workers
         self._timeout = timeout
+        self.metodo = metodo
         self._ao_atualizar = ao_atualizar
         self._evento_forcar = threading.Event()
         self._parar = threading.Event()
@@ -53,7 +70,8 @@ class MonitorStatus:
         equipamentos = self._db.listar_equipamentos()
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         with ThreadPoolExecutor(max_workers=self._workers) as pool:
-            resultados = list(pool.map(lambda e: testar_porta(e.ip, e.porta, self._timeout), equipamentos))
+            resultados = list(pool.map(
+                lambda e: testar_equipamento(e.ip, e.porta, self._timeout, self.metodo), equipamentos))
 
         novo_status, mudou, para_salvar = {}, set(), []
         for eq, (online, latencia) in zip(equipamentos, resultados):

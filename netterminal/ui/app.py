@@ -103,7 +103,8 @@ class OLTManagerApp(ctk.CTk):
         ctk.set_appearance_mode(self.tema)
         aplicar_estilo_ttk(self.cores)
         self.monitor = MonitorStatus(db, config.MONITOR_INTERVALO_SEG, config.MONITOR_WORKERS,
-                                     config.MONITOR_TIMEOUT_SEG, ao_atualizar=self._status_mudou.set)
+                                     config.MONITOR_TIMEOUT_SEG, ao_atualizar=self._status_mudou.set,
+                                     metodo=config.MONITOR_METODO)
         self.menu_barra = BarraMenu(self)
         self._criar_layout()
         self.definir_layout(self.db.get_config("layout_modo", "▣ 1"), salvar=False)

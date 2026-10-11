@@ -87,6 +87,8 @@ def executar(equipamento, comandos, usuario, senha, repositorio_hostkeys,
                 return ResultadoExecucao(equipamento, False, erro=valor)
             if tipo == "hostkey_mudou":
                 return ResultadoExecucao(equipamento, False, erro="Chave SSH do equipamento mudou — conecte manualmente para revisar.")
+            if tipo == "ssh_legado_necessario":
+                return ResultadoExecucao(equipamento, False, erro="SSH antigo — conecte uma vez pelo terminal e libere o 'SSH legado'.")
             if tipo == "dados":
                 saida.append(valor)
         if not sessao.conectado:

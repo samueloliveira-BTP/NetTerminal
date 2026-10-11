@@ -390,6 +390,32 @@ class TerminalTab(ctk.CTkFrame):
             self.app.atualizar_indicadores_abas()
         elif tipo == "hostkey_mudou":
             self._tratar_hostkey_mudou(valor)
+        elif tipo == "ssh_legado_necessario":
+            self._tratar_ssh_legado()
+
+    def _tratar_ssh_legado(self):
+        """Equipamento só fala SSH antigo (ssh-rsa/SHA-1). Pergunta antes de liberar,
+        e libera SOMENTE para este equipamento."""
+        self._definir_status("Falha: equipamento usa SSH antigo")
+        self._mostrar_reconectar(True)
+        self.app.atualizar_indicadores_abas()
+        self._mensagem_sistema(
+            "Este equipamento só aceita algoritmos SSH antigos (chave ssh-rsa com SHA-1), "
+            "desativados por padrão por serem mais fracos.")
+        liberar = msgbox(
+            self.app, "askyesno", "SSH antigo",
+            f"{self.eq.rotulo} usa SSH antigo (ssh-rsa/SHA-1), comum em OLTs de firmware mais velho.\n\n"
+            "Permitir SSH legado SOMENTE para este equipamento?\n"
+            "A conexão continua criptografada e com verificação de chave — é bem mais seguro que Telnet.\n\n"
+            "(Pode ser desmarcado depois em Editar equipamento.)")
+        if not liberar:
+            return
+        self.eq.ssh_legado = True
+        if self.eq.cadastrado:
+            self.db.definir_ssh_legado(self.eq.id, True)
+            self.app.carregar_lista()  # a árvore passa a ter o equipamento com a opção marcada
+        log.warning(f"{auditoria.usuario_atual()} liberou SSH legado para {self.eq.rotulo}")
+        self.reconectar()
 
     def _tratar_hostkey_mudou(self, info):
         self._definir_status("BLOQUEADO: chave SSH do equipamento mudou")

@@ -141,7 +141,7 @@ class TestMonitor(unittest.TestCase):
             db = Database(os.path.join(pasta, "olts.db"), Cifrador(Fernet.generate_key()))
             id_on = db.adicionar_equipamento(Equipamento(None, "on", "127.0.0.1", "SSH", porta_aberta))
             id_off = db.adicionar_equipamento(Equipamento(None, "off", "127.0.0.1", "SSH", porta_fechada))
-            monitor = MonitorStatus(db, 15, 8, 1.0)
+            monitor = MonitorStatus(db, 15, 8, 1.0, metodo="tcp")  # este teste é do modo TCP
             monitor.executar_ciclo()
             self.assertTrue(monitor.status[id_on]["online"])
             self.assertIsNotNone(monitor.status[id_on]["latencia_ms"])

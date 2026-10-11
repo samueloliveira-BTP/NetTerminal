@@ -9,6 +9,7 @@ da thread principal. Tipos de evento:
     ("aviso", texto)          mensagem informativa/de segurança para o técnico
     ("erro", texto)           falha ao conectar
     ("hostkey_mudou", info)   a chave SSH do equipamento mudou (possível MITM)
+    ("ssh_legado_necessario", detalhe)  equipamento só aceita algoritmos SSH antigos
     ("encerrada", motivo)     conexão terminou
 """
 import codecs
@@ -19,6 +20,7 @@ import threading
 
 import paramiko
 
+from netterminal.net.ssh_legado import TransportLegado, eh_erro_de_algoritmo_legado
 from netterminal.net.telnet import SimpleTelnet
 from netterminal.security.hostkeys import fingerprint_sha256, nome_host
 
@@ -74,7 +76,11 @@ class Sessao:
                 return
             self.falhou = True
             log.error(f"Falha na conexão {self.eq.protocolo} com {self.eq.ip}:{self.eq.porta}: {e}")
-            self._evento("erro", _mensagem_amigavel(e))
+            if eh_erro_de_algoritmo_legado(e) and not getattr(self.eq, "ssh_legado", False):
+                # A interface pergunta se o técnico quer liberar o SSH legado para ESTE equipamento
+                self._evento("ssh_legado_necessario", str(e))
+            else:
+                self._evento("erro", _mensagem_amigavel(e))
         finally:
             self._senha = ""
             if self.conectado:
@@ -107,9 +113,14 @@ class SessaoSSH(Sessao):
             self._cliente,
             ao_registrar=lambda host, tipo, fp: self._evento(
                 "aviso", f"Primeira conexão com este equipamento: chave {tipo} registrada ({fp})."))
+        extras = {}
+        if getattr(self.eq, "ssh_legado", False):
+            # Só para equipamentos marcados: aceita ssh-rsa/SHA-1 (ver net/ssh_legado.py)
+            extras["transport_factory"] = TransportLegado
+            self._evento("aviso", "SSH legado ativo para este equipamento (algoritmos antigos, ssh-rsa/SHA-1).")
         self._cliente.connect(
             self.eq.ip, port=int(self.eq.porta), username=self._usuario, password=self._senha,
-            timeout=8, banner_timeout=15, auth_timeout=15, allow_agent=False, look_for_keys=False)
+            timeout=8, banner_timeout=15, auth_timeout=15, allow_agent=False, look_for_keys=False, **extras)
         self._canal = self._cliente.invoke_shell(term="xterm", width=118, height=35)
         self._canal.settimeout(0.3)
         self.conectado = True

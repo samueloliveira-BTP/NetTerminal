@@ -2,12 +2,17 @@
 
 ## 2.1.1 — 2026-10-11
 
-- Distribuição pelo modelo de dois repositórios: código privado
-  (`NetTerminal`) e instaladores públicos (`NetTerminal-releases`).
-  **Primeira versão para distribuir à equipe** — a 2.1.0 apontava para o
-  repositório privado e não receberia atualizações.
-- Novo: *Ajuda → Verificar atualizações agora*, com retorno claro (já
-  atualizado, versão nova, servidor indisponível ou atualização recusada).
+- **Tela dividida adaptativa:** o modo escolhido (1, 2 ou 4) passa a ser o
+  máximo de terminais visíveis e a grade se ajusta à quantidade aberta —
+  1 terminal ocupa a tela toda, 2 ficam lado a lado, 3 ficam dois em cima e
+  um embaixo na largura toda, 4 em grade 2x2. Corrigido: com o modo 4, cada
+  terminal ocupava só 1/4 da tela mesmo sozinho; e a aba nova substituía um
+  terminal visível em vez de ocupar o painel livre.
+- O terminal não força mais uma altura mínima (evitava que 4 painéis com
+  fonte grande coubessem na tela).
+- Distribuição **privada**: o build gera o `.msi` na Release do repositório
+  privado; a equipe recebe o instalador por canal interno, com SHA-256.
+- Novo: *Ajuda → Verificar atualizações agora*.
 
 ## 2.1.0 — 2026-10-11
 

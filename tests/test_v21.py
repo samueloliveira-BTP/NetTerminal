@@ -274,6 +274,19 @@ class TestTLSAtualizacao(unittest.TestCase):
         self.assertFalse(ctx.verify_flags & ssl.VERIFY_X509_STRICT)  # sem o modo que recusa o GitHub
 
 
+class TestTelaDividida(unittest.TestCase):
+    def test_grade_adaptativa(self):
+        from netterminal.ui.app import posicoes_paineis
+        self.assertEqual(posicoes_paineis(0, "lado"), ([], (1, 1)))
+        self.assertEqual(posicoes_paineis(1, "lado"), ([(0, 0, 1, 1)], (1, 1)))          # 1 ocupa tudo
+        self.assertEqual(posicoes_paineis(2, "lado")[1], (1, 2))                         # lado a lado
+        self.assertEqual(posicoes_paineis(2, "empilhado")[1], (2, 1))                    # empilhados
+        pos3, grade3 = posicoes_paineis(3, "lado")
+        self.assertEqual(grade3, (2, 2))
+        self.assertEqual(pos3[2], (1, 0, 1, 2))                                          # 3º ocupa a largura toda
+        self.assertEqual(len(set(p[:2] for p in posicoes_paineis(4, "lado")[0])), 4)    # 4 posições distintas
+
+
 class TestConsultaManual(unittest.TestCase):
     URL = "https://github.com/dono/NetTerminal-releases/releases/latest/download/versao.json"
 

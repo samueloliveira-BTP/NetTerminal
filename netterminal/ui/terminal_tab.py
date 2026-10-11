@@ -118,7 +118,10 @@ class TerminalTab(ctk.CTkFrame):
 
         self.terminal_text = tk.Text(self, bg=cores["term_bg"], fg=cores["term_fg"],
                                      insertbackground=cores["term_fg"], font=("Consolas", self.app.fonte_terminal),
-                                     bd=0, highlightthickness=0)
+                                     bd=0, highlightthickness=0,
+                                     # Tamanho mínimo: o espaço real vem do painel (pack expand),
+                                     # senão 4 painéis com fonte grande "estouram" a tela dividida.
+                                     width=1, height=1)
         self.terminal_text.pack(expand=True, fill="both", padx=5, pady=5)
         self.terminal_text.tag_configure("sistema_tag", foreground=COR_SISTEMA)
         self._configurar_tags_busca()

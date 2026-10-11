@@ -33,8 +33,27 @@ _PREFIXO_EQUIP = "e::"
 _FILTRO_TODAS_MARCAS = "Todas as Marcas"
 _FILTRO_TODOS_PROTOS = "Todos"
 
-# Tela dividida: rótulo do botão -> (linhas, colunas)
-LAYOUTS = {"▣ 1": (1, 1), "◫ 2": (1, 2), "⬒ 2": (2, 1), "⊞ 4": (2, 2)}
+# Tela dividida: rótulo do botão -> (máximo de terminais visíveis, orientação)
+LAYOUTS = {"▣ 1": (1, "lado"), "◫ 2": (2, "lado"), "⬒ 2": (2, "empilhado"), "⊞ 4": (4, "lado")}
+
+
+def posicoes_paineis(quantidade, orientacao):
+    """Grade adaptativa: devolve ([(linha, coluna, altura, largura)], (linhas, colunas)).
+
+    1 terminal  -> ocupa tudo
+    2 terminais -> lado a lado (ou empilhados, no modo ⬒)
+    3 terminais -> dois em cima e um embaixo ocupando a largura toda
+    4 terminais -> grade 2x2
+    """
+    if quantidade <= 1:
+        return [(0, 0, 1, 1)][:quantidade], (1, 1)
+    if quantidade == 2:
+        if orientacao == "empilhado":
+            return [(0, 0, 1, 1), (1, 0, 1, 1)], (2, 1)
+        return [(0, 0, 1, 1), (0, 1, 1, 1)], (1, 2)
+    if quantidade == 3:
+        return [(0, 0, 1, 1), (0, 1, 1, 1), (1, 0, 1, 2)], (2, 2)
+    return [(0, 0, 1, 1), (0, 1, 1, 1), (1, 0, 1, 1), (1, 1, 1, 1)], (2, 2)
 
 _ATALHOS = """Na janela principal:
   Ctrl+F            buscar equipamento
@@ -73,8 +92,9 @@ class OLTManagerApp(ctk.CTk):
         self.regras_destaque = []      # [(RegraDestaque, regex compilada)] — só as ativas
         self._carregar_regras_destaque()
         self.abas = {}                 # nome_da_aba -> {"btn", "lbl", "dot", "frame"}
-        self.paineis = [None]          # nome da aba exibida em cada painel da tela dividida
+        self.paineis = []              # abas visíveis na tela dividida, em ordem (sem buracos)
         self.painel_ativo = 0
+        self.max_paineis, self.orientacao = LAYOUTS["▣ 1"]
         self._janelas_destacadas = []  # TerminalTab em janelas separadas
         self._equipamentos = {}        # id -> Equipamento (o que está na árvore)
         self._fila_ui = queue.Queue()  # funções vindas de threads, executadas na thread da UI
@@ -438,37 +458,35 @@ class OLTManagerApp(ctk.CTk):
         self.selecionar_aba(nome)
 
     def definir_layout(self, rotulo, salvar=True):
-        """Muda a quantidade de painéis (1, 2 lado a lado, 2 empilhados ou 4)."""
+        """Define o MÁXIMO de terminais visíveis ao mesmo tempo. A grade em si se
+        adapta à quantidade de abas abertas (ver posicoes_paineis)."""
         if rotulo not in LAYOUTS:
             rotulo = "▣ 1"
         self.seletor_layout.set(rotulo)
-        linhas, colunas = LAYOUTS[rotulo]
-        self._grade = (linhas, colunas)
-        total = linhas * colunas
-        visiveis = [p for p in self.paineis if p]
-        # Mantém as abas já visíveis e completa com as demais, na ordem em que foram abertas
-        for nome in self.abas:
-            if nome not in visiveis:
-                visiveis.append(nome)
-        self.paineis = (visiveis + [None] * total)[:total]
-        self.painel_ativo = min(self.painel_ativo, total - 1)
+        self.max_paineis, self.orientacao = LAYOUTS[rotulo]
+        # Mantém as visíveis e completa com as demais abas, na ordem em que foram abertas
+        visiveis = [n for n in self.paineis if n in self.abas]
+        visiveis += [n for n in self.abas if n not in visiveis]
+        self.paineis = visiveis[:self.max_paineis]
+        self.painel_ativo = min(self.painel_ativo, max(0, len(self.paineis) - 1))
         if salvar:
             self.db.set_config("layout_modo", rotulo)
         self._redesenhar_paineis()
 
     def _redesenhar_paineis(self):
         frame = self.tab_content_frame
-        linhas, colunas = self._grade
         for dados in self.abas.values():
             dados["frame"].grid_forget()
-        for i in range(2):
-            frame.grid_rowconfigure(i, weight=1 if i < linhas else 0, uniform="paineis")
-            frame.grid_columnconfigure(i, weight=1 if i < colunas else 0, uniform="paineis")
-        for indice, nome in enumerate(self.paineis):
-            if nome in self.abas:
-                term = self.abas[nome]["frame"]
-                term.grid(row=indice // colunas, column=indice % colunas, sticky="nsew", padx=2, pady=2)
-                term.marcar_ativo(indice == self.painel_ativo and len(self.paineis) > 1)
+        posicoes, (linhas, colunas) = posicoes_paineis(len(self.paineis), self.orientacao)
+        for i in range(2):  # zera a grade anterior e liga só as linhas/colunas usadas
+            frame.grid_rowconfigure(i, weight=1 if i < linhas else 0, uniform="linhas" if i < linhas else "")
+            frame.grid_columnconfigure(i, weight=1 if i < colunas else 0, uniform="colunas" if i < colunas else "")
+        varios = len(self.paineis) > 1
+        for indice, (nome, (linha, coluna, alt, larg)) in enumerate(zip(self.paineis, posicoes)):
+            term = self.abas[nome]["frame"]
+            term.grid(row=linha, column=coluna, rowspan=alt, columnspan=larg, sticky="nsew", padx=2, pady=2)
+            term.marcar_ativo(varios and indice == self.painel_ativo)
+
         paleta = paleta_atual()
         ativo = self.paineis[self.painel_ativo] if self.paineis else None
         for nome, dados in self.abas.items():
@@ -481,11 +499,15 @@ class OLTManagerApp(ctk.CTk):
             dados["btn"].configure(fg_color=cor)
 
     def selecionar_aba(self, nome):
-        """Mostra a aba no painel ativo (se já estiver visível, só ativa o painel dela)."""
+        """Mostra a aba: se já está visível, só ativa o painel; se há painel livre,
+        ocupa o livre; senão, troca pelo conteúdo do painel ativo."""
         if nome not in self.abas:
             return
         if nome in self.paineis:
             self.painel_ativo = self.paineis.index(nome)
+        elif len(self.paineis) < self.max_paineis:
+            self.paineis.append(nome)
+            self.painel_ativo = len(self.paineis) - 1
         else:
             self.paineis[self.painel_ativo] = nome
         self._redesenhar_paineis()
@@ -508,9 +530,12 @@ class OLTManagerApp(ctk.CTk):
         dados["frame"].destroy()  # encerra a conexão e registra a duração
         dados["btn"].destroy()
         if nome in self.paineis:
-            indice = self.paineis.index(nome)
+            self.paineis.remove(nome)
+            # Reaproveita o espaço com a aba oculta mais recente (sem deixar buraco)
             ocultas = [n for n in self.abas if n not in self.paineis]
-            self.paineis[indice] = ocultas[-1] if ocultas else None
+            if ocultas and len(self.paineis) < self.max_paineis:
+                self.paineis.append(ocultas[-1])
+            self.painel_ativo = min(self.painel_ativo, max(0, len(self.paineis) - 1))
         self._redesenhar_paineis()
 
     def _fechar_aba_atual(self):
@@ -576,7 +601,10 @@ class OLTManagerApp(ctk.CTk):
             msgbox(self, "info", "Atualizações", f"Você já está na versão mais recente ({APP_VERSION}).")
         elif resultado.status == "sem_url":
             msgbox(self, "info", "Atualizações",
-                   "A atualização automática não está configurada nesta instalação (sem UPDATE_CHECK_URL).")
+                   f"Você está na versão {APP_VERSION}.\n\n"
+                   "As atualizações do NetTerminal são distribuídas pela equipe responsável: quando houver "
+                   "versão nova, você receberá o instalador. Basta executá-lo — ele substitui a versão "
+                   "atual e mantém seus dados e configurações.")
         elif resultado.status == "recusada":
             msgbox(self, "error", "Atualizações",
                    "O servidor respondeu, mas a atualização foi recusada por segurança.\nDetalhes no app.log.")

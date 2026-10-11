@@ -115,62 +115,51 @@ do servidor de atualização, já com o SHA-256).
 - Os dados do usuário (`%USERPROFILE%\.olt_manager`) não são tocados pela
   instalação nem pela desinstalação.
 
-## Publicar uma versão (GitHub, sem admin local)
-
-Modelo de **dois repositórios**:
-
-| Repositório | Visibilidade | Conteúdo |
-|---|---|---|
-| `NetTerminal` | **Privado** | Código-fonte + workflow de build |
-| `NetTerminal-releases` | **Público** | Só o instalador `.msi` e o `versao.json` |
+## Lançar e distribuir uma versão (repositório privado)
 
 O workflow `.github/workflows/release.yml` roda numa máquina Windows do
-GitHub: testes → `.exe` → `.msi` (WiX 5, licença MS-RL) → publica a versão
-nos dois repositórios. O app instalado consulta, sem senha:
-`https://github.com/<dono>/NetTerminal-releases/releases/latest/download/versao.json`
+GitHub (sem precisar de admin na sua máquina): testes → `.exe` → `.msi`
+(WiX 5, licença MS-RL) → Release **privada** com `NetTerminal-X.Y.Z.msi` e
+`versao.json` (que traz o SHA-256 do instalador).
 
-### Configuração (uma vez só)
-
-1. **Criar o repositório público:** github.com → *New repository* → nome
-   `NetTerminal-releases` → **Public** → marcar **Add a README file** (ele
-   precisa ter pelo menos um commit no branch `main`).
-2. **Criar o token** (fica guardado só no GitHub, nunca no app): *Settings da
-   conta → Developer settings → Personal access tokens → Fine-grained tokens →
-   Generate new token*:
-   - *Repository access:* **Only select repositories** → `NetTerminal-releases`
-   - *Permissions → Repository permissions → Contents:* **Read and write**
-   - *Expiration:* 1 ano (anote para renovar)
-3. **Guardar o token como segredo** no repositório **privado** `NetTerminal`:
-   *Settings → Secrets and variables → Actions → New repository secret* →
-   nome `RELEASES_TOKEN` → colar o token. (Não cole o token em nenhum outro lugar.)
-4. Se o repositório público tiver outro nome/dono, crie em *Variables* a
-   variável `RELEASES_REPO` com `dono/nome`.
-
-### Lançar uma versão
+### Lançar
 
 1. Atualize `APP_VERSION` em `netterminal/__init__.py`, o `pyproject.toml` e
-   o `CHANGELOG.md`; faça commit e *Push* no GitHub Desktop.
-2. No repositório privado: *Releases → Draft a new release → Choose a tag →*
-   digite `vX.Y.Z` (igual ao `APP_VERSION`) → *Create new tag* → *Publish release*.
-3. Acompanhe em *Actions* (~3 min). Ao terminar, a versão aparece no
-   `NetTerminal-releases` e todos os apps instalados atualizam ao abrir (ou em
-   *Ajuda → Verificar atualizações agora*).
+   o `CHANGELOG.md`; faça commit e *Push origin* no GitHub Desktop.
+2. No GitHub: *Releases → Draft a new release → Choose a tag →* digite
+   `vX.Y.Z` (igual ao `APP_VERSION`) → *Create new tag* → *Publish release*.
+3. Acompanhe em *Actions* (~3 min). Ao terminar, o `.msi` aparece anexado
+   na Release.
 
-**Primeira instalação na equipe:** baixe o `.msi` da página de releases
-pública e instale normalmente (não pede administrador). A partir daí, as
-atualizações são automáticas.
+### Distribuir para a equipe
 
-### Cuidados de segurança
-- Quem consegue publicar no `NetTerminal-releases` consegue instalar programas
-  em todas as máquinas da equipe. Por isso: **autenticação em dois fatores** na
-  conta, token restrito só a esse repositório e com validade, e ninguém mais
-  com acesso de escrita.
-- Se o GitHub oferecer **releases imutáveis** (*Settings → General*), ative no
-  repositório público: impede trocar o instalador de uma versão já publicada.
-- O instalador público contém o programa compilado; não coloque segredos no
-  código nem no `.env` (o build só grava nele o endereço de atualização).
-- Quando houver certificado de assinatura de código, ative
-  `UPDATE_REQUIRE_SIGNATURE=true` — protege mesmo se a conta for invadida.
+O link da Release privada **só abre para quem tem acesso ao repositório**.
+Para o restante da equipe:
+
+1. Baixe o `NetTerminal-X.Y.Z.msi` da Release.
+2. Compartilhe o **arquivo** por um canal interno da empresa (pasta de rede,
+   OneDrive/SharePoint, Teams) junto com o SHA-256 que está no `versao.json`.
+3. Cada técnico (opcional, recomendado) confere o arquivo antes de instalar:
+
+   ```bash
+   Get-FileHash .\NetTerminal-X.Y.Z.msi -Algorithm SHA256
+   ```
+
+4. Executar o `.msi`: não pede administrador, **substitui a versão anterior**
+   e mantém dados, senhas e configurações (`%USERPROFILE%\.olt_manager`).
+
+Em *Ajuda → Verificar atualizações agora* o técnico vê a versão instalada e a
+orientação de que as atualizações são distribuídas pela equipe.
+
+> Se no futuro houver um servidor HTTPS interno, basta publicar nele o `.msi`
+> e o `versao.json` e definir `UPDATE_CHECK_URL` no `.env`: o app passa a se
+> atualizar sozinho (veja "Gerar o instalador MSI").
+
+### Cuidados
+- Mantenha **autenticação em dois fatores** na conta do GitHub e só dê acesso
+  ao repositório a quem precisa.
+- Distribua o instalador sempre pelo mesmo canal interno e com o SHA-256 —
+  assim ninguém instala um arquivo trocado.
 
 ## Dados do usuário
 

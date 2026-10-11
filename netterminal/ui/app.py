@@ -221,8 +221,14 @@ class OLTManagerApp(ctk.CTk):
         topo_abas.pack(fill="x", padx=5, pady=2)
         self.seletor_layout = ctk.CTkSegmentedButton(topo_abas, values=list(LAYOUTS), command=self.definir_layout)
         self.seletor_layout.pack(side="right", padx=(6, 0))
-        self.tab_bar_frame = ctk.CTkScrollableFrame(topo_abas, height=45, orientation="horizontal", fg_color="transparent")
+        # Lista de todas as abas: só aparece quando elas não cabem na largura
+        self.btn_lista_abas = ctk.CTkButton(topo_abas, text="☰ ▾", width=86, height=28, fg_color="transparent",
+                                            border_width=1, border_color="#555555", command=self._menu_lista_abas)
+        self.tab_bar_frame = ctk.CTkScrollableFrame(topo_abas, height=38, orientation="horizontal", fg_color="transparent")
         self.tab_bar_frame.pack(side="left", fill="x", expand=True)
+        canvas_abas = self.tab_bar_frame._parent_canvas
+        canvas_abas.bind("<Configure>", lambda e: self.after(80, self._ajustar_barra_abas), add="+")
+        # (A roda do mouse sobre as abas já rola na horizontal — comportamento do CTkScrollableFrame)
 
         rodape = ctk.CTkFrame(self.main_area, height=20, fg_color="transparent")
         rodape.pack(side="bottom", fill="x", padx=10, pady=(2, 5))
@@ -442,17 +448,21 @@ class OLTManagerApp(ctk.CTk):
             nome = f"{nome_base} - {n}"
             n += 1
 
-        moldura = ctk.CTkFrame(self.tab_bar_frame, corner_radius=15)
-        moldura.pack(side="left", padx=4, pady=2)
-        dot = ctk.CTkLabel(moldura, text="●", font=ctk.CTkFont(size=14), text_color=COR_DESCONHECIDO, width=8)
-        dot.pack(side="left", padx=(10, 2), pady=2)
-        lbl = ctk.CTkLabel(moldura, text=nome, font=ctk.CTkFont(weight="bold"))
-        lbl.pack(side="left", padx=(0, 5), pady=2)
+        # Aba compacta: só o nome (o IP fica no cadastro / botão direito na árvore)
+        texto_aba = eq.nome if eq.cadastrado else eq.ip
+        if nome != nome_base:
+            texto_aba += nome[len(nome_base):]  # sufixo " - 1", " - 2" de abas repetidas
+        moldura = ctk.CTkFrame(self.tab_bar_frame, corner_radius=13)
+        moldura.pack(side="left", padx=3, pady=2)
+        dot = ctk.CTkLabel(moldura, text="●", font=ctk.CTkFont(size=13), text_color=COR_DESCONHECIDO, width=8)
+        dot.pack(side="left", padx=(9, 2), pady=1)
+        lbl = ctk.CTkLabel(moldura, text=texto_aba, font=ctk.CTkFont(size=12, weight="bold"))
+        lbl.pack(side="left", padx=(0, 4), pady=1)
         lbl.bind("<Button-1>", lambda e: self.selecionar_aba(nome))
-        ctk.CTkButton(moldura, text="✖", width=20, height=20, corner_radius=10, fg_color="transparent",
-                      hover_color="#8B0000", command=lambda: self.fechar_aba(nome)).pack(side="right", padx=(0, 5), pady=2)
-        ctk.CTkButton(moldura, text="↗", width=20, height=20, corner_radius=10, fg_color="transparent",
-                      hover_color="#1f538d", command=lambda: self.destacar_aba(nome)).pack(side="right", padx=(0, 2), pady=2)
+        ctk.CTkButton(moldura, text="✖", width=18, height=18, corner_radius=9, fg_color="transparent",
+                      hover_color="#8B0000", command=lambda: self.fechar_aba(nome)).pack(side="right", padx=(0, 5), pady=1)
+        ctk.CTkButton(moldura, text="↗", width=18, height=18, corner_radius=9, fg_color="transparent",
+                      hover_color="#1f538d", command=lambda: self.destacar_aba(nome)).pack(side="right", padx=(0, 1), pady=1)
 
         term = TerminalTab(self.tab_content_frame, self, eq)
         self.abas[nome] = {"btn": moldura, "lbl": lbl, "dot": dot, "frame": term}
@@ -498,6 +508,49 @@ class OLTManagerApp(ctk.CTk):
             else:
                 cor = paleta["aba"]
             dados["btn"].configure(fg_color=cor)
+        # Mede depois que as abas terminam de desenhar (medir cedo demais dava resultado errado)
+        self.after(120, self._ajustar_barra_abas)
+
+    def _ajustar_barra_abas(self):
+        """Quando as abas não cabem: mostra a barra de rolagem e o botão com a lista
+        de todas as abas. Quando cabem: esconde os dois."""
+        barra = getattr(self.tab_bar_frame, "_scrollbar", None)
+        canvas = getattr(self.tab_bar_frame, "_parent_canvas", None)
+        if barra is None or canvas is None or not self.winfo_exists():
+            return
+        try:
+            conteudo = sum(aba.winfo_reqwidth() + 6 for aba in self.tab_bar_frame.winfo_children())
+            if conteudo <= canvas.winfo_width():
+                barra.grid_remove()
+                canvas.xview_moveto(0)
+                self.btn_lista_abas.pack_forget()
+            else:
+                barra.grid()
+                self.btn_lista_abas.configure(text=f"☰ {len(self.abas)} abas ▾")
+                if not self.btn_lista_abas.winfo_ismapped():
+                    # O CTkScrollableFrame é posicionado pelo seu quadro externo (_parent_frame)
+                    self.btn_lista_abas.pack(side="right", padx=(6, 0), before=self.tab_bar_frame._parent_frame)
+        except tk.TclError:
+            pass
+
+    def _menu_lista_abas(self):
+        menu = tk.Menu(self, tearoff=0)
+        for nome in self.abas:
+            marca = "✓ " if nome in self.paineis else "    "
+            menu.add_command(label=f"{marca}{self.abas[nome]['lbl'].cget('text')}",
+                             command=lambda n=nome: self._ir_para_aba(n))
+        btn = self.btn_lista_abas
+        menu.tk_popup(btn.winfo_rootx(), btn.winfo_rooty() + btn.winfo_height())
+
+    def _ir_para_aba(self, nome):
+        """Seleciona a aba e rola a barra até ela ficar visível."""
+        self.selecionar_aba(nome)
+        try:
+            canvas = self.tab_bar_frame._parent_canvas
+            total = max(1, self.tab_bar_frame.winfo_width())
+            canvas.xview_moveto(max(0.0, self.abas[nome]["btn"].winfo_x() - 20) / total)
+        except (tk.TclError, KeyError):
+            pass
 
     def selecionar_aba(self, nome):
         """Mostra a aba: se já está visível, só ativa o painel; se há painel livre,

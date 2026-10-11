@@ -27,7 +27,7 @@ from netterminal.core.redaction import eh_prompt_de_senha
 from netterminal.net.sessao import SessaoSSH, SessaoTelnet
 from netterminal.services import auditoria
 from netterminal.ui.dialogs.login_manual import pedir_credenciais
-from netterminal.ui.tema import COR_SISTEMA, paleta_atual
+from netterminal.ui.tema import COR_DESCONHECIDO, COR_OFFLINE, COR_ONLINE, COR_SISTEMA, paleta_atual
 from netterminal.ui.utils import msgbox
 
 log = logging.getLogger(__name__)
@@ -81,35 +81,54 @@ class TerminalTab(ctk.CTkFrame):
 
     # ============================================================= interface
     def _montar_interface(self):
+        """Uma única barra compacta (≈34 px) por terminal:
+        [● status] [marca] [macros que couberem … +N ▾] [🔍 ONU Ping Tracert ↻]
+        Antes eram duas linhas (≈110 px) com barra de rolagem — na tela
+        dividida em 4, isso comia boa parte da área útil."""
         cores = self.app.cores
-        self.header = ctk.CTkFrame(self, fg_color="transparent")
-        self.header.pack(fill="x", padx=5, pady=(5, 0))
-        self.status_label = ctk.CTkLabel(self.header, text=f"Status: Conectando a {self.eq.rotulo}...",
-                                         font=ctk.CTkFont(size=14, weight="bold"))
-        self.status_label.pack(side="left")
+        self.barra = ctk.CTkFrame(self, height=34, corner_radius=0, fg_color="transparent")
+        self.barra.pack(fill="x", padx=4, pady=(4, 2))
+        self.barra.grid_columnconfigure(2, weight=1)
 
-        estilo = dict(height=26, fg_color="transparent", border_width=1, border_color="#555555")
-        from netterminal.ui.dialogs import ferramentas_rede, provisionar_onu  # import tardio (evita ciclo)
-        ctk.CTkButton(self.header, text="🧭 Tracert", width=80,
-                      command=lambda: ferramentas_rede.abrir(self.app, self.eq.ip, "tracert"), **estilo).pack(side="right", padx=2)
-        ctk.CTkButton(self.header, text="📶 Ping", width=70,
-                      command=lambda: ferramentas_rede.abrir(self.app, self.eq.ip, "ping"), **estilo).pack(side="right", padx=2)
-        ctk.CTkButton(self.header, text="🧙 ONU", width=70,
-                      command=lambda: provisionar_onu.abrir(self.app, self), **estilo).pack(side="right", padx=2)
-        ctk.CTkButton(self.header, text="🔍", width=34, command=self.mostrar_busca, **estilo).pack(side="right", padx=2)
-        self.btn_reconectar = ctk.CTkButton(self.header, text="↻ Reconectar", width=110, height=26,
-                                            fg_color=cores["btn_bg"], hover_color=cores["btn_hover"],
-                                            command=self.reconectar)
+        status = ctk.CTkFrame(self.barra, fg_color="transparent")
+        status.grid(row=0, column=0, sticky="w", padx=(2, 6))
+        self.status_dot = ctk.CTkLabel(status, text="●", width=14, text_color=COR_DESCONHECIDO,
+                                       font=ctk.CTkFont(size=15))
+        self.status_dot.pack(side="left")
+        self.status_label = ctk.CTkLabel(status, text="Conectando...", font=ctk.CTkFont(size=12, weight="bold"))
+        self.status_label.pack(side="left", padx=(2, 0))
 
-        self.macro_bar = ctk.CTkFrame(self, height=35)
-        self.macro_bar.pack(fill="x", padx=5, pady=5)
-        ctk.CTkLabel(self.macro_bar, text="Marca:").pack(side="left", padx=(5, 2))
-        self.combo_marca = ctk.CTkComboBox(self.macro_bar, values=["Nenhuma"], width=140,
+        self.combo_marca = ctk.CTkComboBox(self.barra, values=["Nenhuma"], width=118, height=26,
                                            command=self.carregar_botoes_macro)
-        self.combo_marca.pack(side="left", padx=5)
-        self.macro_buttons_frame = ctk.CTkScrollableFrame(self.macro_bar, orientation="horizontal",
-                                                          height=40, fg_color="transparent")
-        self.macro_buttons_frame.pack(side="left", expand=True, fill="x", padx=5)
+        self.combo_marca.grid(row=0, column=1, padx=4)
+
+        # Área das macros: tamanho vem da barra (não dos botões), para não "empurrar" o layout
+        self.macro_buttons_frame = ctk.CTkFrame(self.barra, height=30, width=1, fg_color="transparent")
+        self.macro_buttons_frame.grid(row=0, column=2, sticky="ew", padx=4)
+        self.macro_buttons_frame.pack_propagate(False)
+        self.macro_buttons_frame.bind("<Configure>", self._agendar_distribuir_macros)
+        self._botoes_macro, self._macros_ocultas, self._timer_macros = [], [], None
+
+        acoes = ctk.CTkFrame(self.barra, fg_color="transparent")
+        acoes.grid(row=0, column=3, sticky="e")
+        estilo = dict(height=26, fg_color="transparent", border_width=1, border_color="#555555",
+                      font=ctk.CTkFont(size=12))
+        from netterminal.ui.dialogs import ferramentas_rede, provisionar_onu  # import tardio (evita ciclo)
+        self.btn_reconectar = ctk.CTkButton(acoes, text="↻ Reconectar", width=96, height=26,
+                                            fg_color=cores["btn_bg"], hover_color=cores["btn_hover"],
+                                            font=ctk.CTkFont(size=12), command=self.reconectar)
+        self._btn_lupa = ctk.CTkButton(acoes, text="🔍", width=30, command=self.mostrar_busca, **estilo)
+        self._btn_lupa.pack(side="left", padx=1)
+        ctk.CTkButton(acoes, text="ONU", width=46, command=lambda: provisionar_onu.abrir(self.app, self),
+                      **estilo).pack(side="left", padx=1)
+        ctk.CTkButton(acoes, text="Ping", width=46, command=lambda: ferramentas_rede.abrir(self.app, self.eq.ip, "ping"),
+                      **estilo).pack(side="left", padx=1)
+        self._btn_tracert = ctk.CTkButton(acoes, text="Tracert", width=58,
+                                          command=lambda: ferramentas_rede.abrir(self.app, self.eq.ip, "tracert"),
+                                          **estilo)
+        self._btn_tracert.pack(side="left", padx=1)
+        self._acoes = acoes
+        self._compacto = False
 
         # Painel para preencher variáveis [VAR] das macros (fica oculto até precisar)
         self.dynamic_bar = ctk.CTkFrame(self, height=35)
@@ -122,7 +141,7 @@ class TerminalTab(ctk.CTkFrame):
                                      # Tamanho mínimo: o espaço real vem do painel (pack expand),
                                      # senão 4 painéis com fonte grande "estouram" a tela dividida.
                                      width=1, height=1)
-        self.terminal_text.pack(expand=True, fill="both", padx=5, pady=5)
+        self.terminal_text.pack(expand=True, fill="both", padx=4, pady=(0, 4))
         self.terminal_text.tag_configure("sistema_tag", foreground=COR_SISTEMA)
         self._configurar_tags_busca()
 
@@ -141,14 +160,34 @@ class TerminalTab(ctk.CTkFrame):
         t.bind("<FocusIn>", lambda e: self.app.ao_focar_terminal(self))
 
     def _definir_status(self, texto):
-        if self.winfo_exists():
-            self.status_label.configure(text=f"Status: {texto}")
+        """Status curto com bolinha colorida (o IP/nome já aparece na aba)."""
+        if not self.winfo_exists():
+            return
+        # Sempre curto: o motivo detalhado já aparece como mensagem dentro do terminal
+        if texto.startswith("Conectado a "):
+            curto, cor = f"Conectado · {self.eq.protocolo}", COR_ONLINE
+        elif texto.startswith("Conectando"):
+            curto, cor = "Conectando...", COR_DESCONHECIDO
+        elif texto.startswith("BLOQUEADO"):
+            curto, cor = "BLOQUEADO", COR_OFFLINE
+        elif texto.startswith("Falha: equipamento usa SSH antigo"):
+            curto, cor = "SSH antigo", COR_OFFLINE
+        elif texto.startswith("Falha"):
+            curto, cor = "Falha", COR_OFFLINE
+        elif texto.startswith("Desconectado"):
+            curto, cor = "Desconectado", COR_DESCONHECIDO
+        else:
+            curto, cor = texto[:20], COR_DESCONHECIDO
+        self.status_label.configure(text=curto)
+        self.status_dot.configure(text_color=cor)
+        self._agendar_distribuir_macros()
 
     def _mostrar_reconectar(self, visivel):
         if visivel:
-            self.btn_reconectar.pack(side="right", padx=(2, 8))
+            self.btn_reconectar.pack(side="left", padx=(1, 4), before=self._btn_lupa)
         else:
             self.btn_reconectar.pack_forget()
+        self._agendar_distribuir_macros()
 
     def marcar_ativo(self, ativo):
         self.configure(border_color=self.app.cores["btn_bg"] if ativo else paleta_atual()["divisoria"])
@@ -620,11 +659,77 @@ class TerminalTab(ctk.CTkFrame):
         for widget in self.macro_buttons_frame.winfo_children():
             widget.destroy()
         cores = self.app.cores
+        self._botoes_macro = []
         for m in self.db.listar_macros():
             if m.marca == marca:
-                ctk.CTkButton(self.macro_buttons_frame, text=m.nome, width=80, height=24,
-                              fg_color=cores["btn_bg"], hover_color=cores["btn_hover"],
-                              command=lambda cmd=m.comando: self._processar_macro(cmd)).pack(side="left", padx=3, pady=2)
+                botao = ctk.CTkButton(self.macro_buttons_frame, text=m.nome, width=40, height=26,
+                                      fg_color=cores["btn_bg"], hover_color=cores["btn_hover"],
+                                      font=ctk.CTkFont(size=12),
+                                      command=lambda cmd=m.comando: self._processar_macro(cmd))
+                self._botoes_macro.append((botao, m))
+        self._btn_mais_macros = ctk.CTkButton(self.macro_buttons_frame, text="▾", width=50, height=26,
+                                              fg_color="transparent", border_width=1, border_color="#555555",
+                                              font=ctk.CTkFont(size=12), command=self._menu_macros_ocultas)
+        self._agendar_distribuir_macros()
+
+    def _agendar_distribuir_macros(self, event=None):
+        if self._timer_macros:
+            self.after_cancel(self._timer_macros)
+        self._timer_macros = self.after(60, self._distribuir_macros)
+
+    def _distribuir_macros(self):
+        """Mostra as macros que cabem na largura; o resto vai para o botão "+N ▾".
+        Recalculado sempre que o painel muda de tamanho (tela dividida, janela)."""
+        self._timer_macros = None
+        if not self.winfo_exists():
+            return
+        self._ajustar_modo_compacto()
+        if not self._botoes_macro:
+            return
+        disponivel = self.macro_buttons_frame.winfo_width()
+        if disponivel <= 1:
+            return
+        for botao, _ in self._botoes_macro:
+            botao.pack_forget()
+        self._btn_mais_macros.pack_forget()
+        largura_mais = self._btn_mais_macros.winfo_reqwidth() + 8
+        usado, self._macros_ocultas = 0, []
+        for indice, (botao, macro) in enumerate(self._botoes_macro):
+            largura = botao.winfo_reqwidth() + 6
+            sobram = len(self._botoes_macro) - indice - 1
+            limite = disponivel - (largura_mais if sobram else 0)
+            if not self._macros_ocultas and usado + largura <= limite:
+                botao.pack(side="left", padx=3, pady=2)
+                usado += largura
+            else:
+                self._macros_ocultas.append(macro)
+        if self._macros_ocultas:
+            if usado:
+                texto = f"+{len(self._macros_ocultas)} ▾"
+            elif disponivel >= 100:
+                texto = f"Macros ({len(self._macros_ocultas)}) ▾"
+            else:
+                texto = "Macros ▾" if disponivel >= 76 else "▾"
+            self._btn_mais_macros.configure(text=texto, width=30)
+            self._btn_mais_macros.pack(side="left", padx=3, pady=2)
+
+    def _ajustar_modo_compacto(self):
+        """Painéis estreitos (tela dividida): botões de ação encolhem para sobrar
+        espaço para as macros."""
+        compacto = self.winfo_width() < 760
+        if compacto == self._compacto:
+            return
+        self._compacto = compacto
+        self.btn_reconectar.configure(text="↻" if compacto else "↻ Reconectar", width=30 if compacto else 96)
+        self._btn_tracert.configure(text="Trace" if compacto else "Tracert", width=46 if compacto else 58)
+        self.combo_marca.configure(width=96 if compacto else 118)
+
+    def _menu_macros_ocultas(self):
+        menu = tk.Menu(self, tearoff=0)
+        for macro in self._macros_ocultas:
+            menu.add_command(label=macro.nome, command=lambda cmd=macro.comando: self._processar_macro(cmd))
+        botao = self._btn_mais_macros
+        menu.tk_popup(botao.winfo_rootx(), botao.winfo_rooty() + botao.winfo_height())
 
     def _processar_macro(self, comando):
         if not self.conectado:

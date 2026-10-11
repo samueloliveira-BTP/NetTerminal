@@ -10,6 +10,18 @@
   terminal visível em vez de ocupar o painel livre.
 - O terminal não força mais uma altura mínima (evitava que 4 painéis com
   fonte grande coubessem na tela).
+- **Visual dos terminais refeito** (testado em 1, 2, 3, 4 e 7 abas no tamanho
+  real da tela — 1920×1080 com escala de 125%):
+  - uma única barra por terminal (status com bolinha colorida, marca, macros
+    e botões) no lugar de duas linhas — ~70 px a mais de terminal por painel;
+  - macros adaptativas: mostra as que cabem e o resto em "+N ▾" (sem barra
+    de rolagem);
+  - modo compacto automático em painéis estreitos (↻, "Trace");
+  - status curto ("Conectado · SSH", "Desconectado", "Falha"); o motivo
+    aparece dentro do terminal;
+  - abas mostram só o nome do equipamento; a barra de rolagem das abas e o
+    botão "☰ N abas ▾" só aparecem quando as abas não cabem.
+- `tools/capturar_layouts.py`: teste visual automático dos formatos.
 - **Monitor de status por ping (ICMP)** em vez de abrir conexão na porta de
   login a cada 15 s. O método antigo fazia equipamentos Huawei bloquearem o
   IP do técnico ("The IP has been blocked and you cannot log on it") e enchia

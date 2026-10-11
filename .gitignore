@@ -1,0 +1,19 @@
+# Ambiente e build
+.venv/
+build/
+dist/
+__pycache__/
+*.pyc
+
+# Backups locais
+_backups/
+
+# Configuração local e dados sensíveis (nunca versionar)
+.env
+*.db
+*.db-wal
+*.db-shm
+*.key
+*.dpapi
+known_hosts
+*.log

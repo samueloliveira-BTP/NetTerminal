@@ -1,0 +1,74 @@
+# Gera e publica uma versão do NetTerminal quando uma tag "vX.Y.Z" é enviada.
+#
+# Roda numa máquina Windows do GitHub (não precisa de admin na sua máquina):
+#   testes -> NETerminal.exe (PyInstaller) -> NetTerminal-X.Y.Z.msi (WiX 5) -> Release
+#
+# A Release publica 2 arquivos:
+#   NetTerminal-X.Y.Z.msi  instalador
+#   versao.json            lido pelo app para saber se há atualização (com SHA-256)
+#
+# O app instalado consulta:
+#   https://github.com/<dono>/<repo>/releases/latest/download/versao.json
+# (o .env com esse endereço é gerado aqui e embutido no .msi)
+#
+# IMPORTANTE: para o app conseguir baixar sem senha/token, as Releases precisam
+# ser PÚBLICAS (repositório público). Veja o README, seção "Publicar no GitHub".
+
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write   # necessário só para criar a Release
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Conferir versão (tag x APP_VERSION)
+        shell: pwsh
+        run: |
+          $versao = (Select-String -Path "netterminal\__init__.py" -Pattern 'APP_VERSION = "([\d\.]+)"').Matches[0].Groups[1].Value
+          if ("v$versao" -ne "${{ github.ref_name }}") {
+            throw "A tag ${{ github.ref_name }} não bate com APP_VERSION ($versao) em netterminal/__init__.py"
+          }
+          "VERSAO=$versao" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Instalar dependências (Python 3.14 + PyInstaller)
+        run: uv sync --python 3.14
+
+      - name: Testes
+        run: .venv\Scripts\python.exe -m unittest discover -s tests -t . -v
+
+      - name: Instalar WiX 5 (licença MS-RL)
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Gerar .env do app (endereço de atualização)
+        shell: pwsh
+        run: |
+          $conteudo = "UPDATE_CHECK_URL=https://github.com/${{ github.repository }}/releases/latest/download/versao.json`n"
+          [IO.File]::WriteAllText("$PWD\.env", $conteudo, (New-Object Text.UTF8Encoding $false))
+
+      - name: Gerar executável e MSI
+        shell: pwsh
+        run: >
+          ./installer/build_msi.ps1
+          -UrlDownloadBase "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}"
+
+      - name: Publicar Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: NetTerminal ${{ env.VERSAO }}
+          body_path: CHANGELOG.md
+          files: |
+            dist/NetTerminal-${{ env.VERSAO }}.msi
+            dist/versao.json

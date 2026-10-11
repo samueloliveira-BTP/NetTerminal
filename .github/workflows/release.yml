@@ -1,18 +1,16 @@
-# Gera e publica uma versão do NetTerminal quando uma tag "vX.Y.Z" é enviada.
+# Gera e publica uma versão do NetTerminal quando uma tag "vX.Y.Z" é criada.
 #
-# Roda numa máquina Windows do GitHub (não precisa de admin na sua máquina):
-#   testes -> NETerminal.exe (PyInstaller) -> NetTerminal-X.Y.Z.msi (WiX 5) -> Release
+# Modelo de 2 repositórios:
+#   NetTerminal           (PRIVADO)  código-fonte + este workflow
+#   NetTerminal-releases  (PÚBLICO)  só o instalador .msi e o versao.json
 #
-# A Release publica 2 arquivos:
-#   NetTerminal-X.Y.Z.msi  instalador
-#   versao.json            lido pelo app para saber se há atualização (com SHA-256)
+# O app instalado consulta (sem senha/token):
+#   https://github.com/<dono>/NetTerminal-releases/releases/latest/download/versao.json
 #
-# O app instalado consulta:
-#   https://github.com/<dono>/<repo>/releases/latest/download/versao.json
-# (o .env com esse endereço é gerado aqui e embutido no .msi)
-#
-# IMPORTANTE: para o app conseguir baixar sem senha/token, as Releases precisam
-# ser PÚBLICAS (repositório público). Veja o README, seção "Publicar no GitHub".
+# Configuração (uma vez) — veja o README, seção "Publicar uma versão":
+#   * Secret  RELEASES_TOKEN : token fine-grained com permissão "Contents: Read and write"
+#                              SOMENTE no repositório NetTerminal-releases
+#   * Variable RELEASES_REPO : (opcional) "dono/repo" público; padrão <dono>/NetTerminal-releases
 
 name: Release
 
@@ -21,7 +19,10 @@ on:
     tags: ["v*.*.*"]
 
 permissions:
-  contents: write   # necessário só para criar a Release
+  contents: write   # só para criar a Release interna neste repositório privado
+
+env:
+  RELEASES_REPO: ${{ vars.RELEASES_REPO || format('{0}/NetTerminal-releases', github.repository_owner) }}
 
 jobs:
   release:
@@ -29,14 +30,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Conferir versão (tag x APP_VERSION)
+      - name: Conferir configuração e versão
         shell: pwsh
+        env:
+          TOKEN_CONFIGURADO: ${{ secrets.RELEASES_TOKEN != '' }}
         run: |
+          if ($env:TOKEN_CONFIGURADO -ne "true") {
+            throw "Secret RELEASES_TOKEN não configurado (Settings > Secrets and variables > Actions)."
+          }
           $versao = (Select-String -Path "netterminal\__init__.py" -Pattern 'APP_VERSION = "([\d\.]+)"').Matches[0].Groups[1].Value
           if ("v$versao" -ne "${{ github.ref_name }}") {
             throw "A tag ${{ github.ref_name }} não bate com APP_VERSION ($versao) em netterminal/__init__.py"
           }
           "VERSAO=$versao" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "Repositório público de releases: $env:RELEASES_REPO"
 
       - uses: astral-sh/setup-uv@v6
 
@@ -52,23 +59,41 @@ jobs:
           dotnet tool install --global wix --version 5.0.2
           "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
-      - name: Gerar .env do app (endereço de atualização)
+      - name: Gerar .env do app (endereço PÚBLICO de atualização)
         shell: pwsh
         run: |
-          $conteudo = "UPDATE_CHECK_URL=https://github.com/${{ github.repository }}/releases/latest/download/versao.json`n"
+          $conteudo = "UPDATE_CHECK_URL=https://github.com/$env:RELEASES_REPO/releases/latest/download/versao.json`n"
           [IO.File]::WriteAllText("$PWD\.env", $conteudo, (New-Object Text.UTF8Encoding $false))
+          Get-Content .env
 
       - name: Gerar executável e MSI
         shell: pwsh
         run: >
           ./installer/build_msi.ps1
-          -UrlDownloadBase "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}"
+          -UrlDownloadBase "https://github.com/${{ env.RELEASES_REPO }}/releases/download/${{ github.ref_name }}"
 
-      - name: Publicar Release
+      - name: Release interna (repositório privado, com o changelog completo)
         uses: softprops/action-gh-release@v2
         with:
           name: NetTerminal ${{ env.VERSAO }}
           body_path: CHANGELOG.md
+          files: |
+            dist/NetTerminal-${{ env.VERSAO }}.msi
+            dist/versao.json
+
+      - name: Release pública (só instalador + versao.json)
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: ${{ env.RELEASES_REPO }}
+          token: ${{ secrets.RELEASES_TOKEN }}
+          tag_name: ${{ github.ref_name }}
+          target_commitish: main
+          name: NetTerminal ${{ env.VERSAO }}
+          make_latest: true
+          body: |
+            Instalador do NetTerminal ${{ env.VERSAO }}.
+            Quem já tem o NetTerminal instalado recebe esta versão automaticamente.
+            SHA-256 do instalador: veja o arquivo versao.json.
           files: |
             dist/NetTerminal-${{ env.VERSAO }}.msi
             dist/versao.json

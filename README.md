@@ -115,26 +115,60 @@ do servidor de atualização, já com o SHA-256).
 - Os dados do usuário (`%USERPROFILE%\.olt_manager`) não são tocados pela
   instalação nem pela desinstalação.
 
-## Publicar no GitHub (build do MSI na nuvem, sem admin local)
+## Publicar uma versão (GitHub, sem admin local)
 
-O workflow `.github/workflows/release.yml` faz tudo numa máquina Windows do
-GitHub: testes, `.exe`, `.msi` (WiX 5, licença MS-RL) e a Release com
-`NetTerminal-X.Y.Z.msi` + `versao.json`.
+Modelo de **dois repositórios**:
 
-1. Crie o repositório e envie o projeto (o `.gitignore` já impede o envio de
-   `.env`, banco, chaves, logs, `_backups/`, `build/` e `dist/`).
-2. Para lançar uma versão: atualize `APP_VERSION` em `netterminal/__init__.py`
-   e o `CHANGELOG.md`, e crie a tag correspondente (ex.: `v2.1.0`).
-   Pelo site: *Releases > Draft a new release > Choose a tag > v2.1.0*.
-3. O app instalado consulta sozinho
-   `https://github.com/<dono>/<repo>/releases/latest/download/versao.json`.
+| Repositório | Visibilidade | Conteúdo |
+|---|---|---|
+| `NetTerminal` | **Privado** | Código-fonte + workflow de build |
+| `NetTerminal-releases` | **Público** | Só o instalador `.msi` e o `versao.json` |
 
-**Requisitos e cuidados:**
-- As Releases precisam ser **públicas** para o app baixar sem token (não
-  coloque token no app). Opção: código num repositório privado e só os
-  instaladores num repositório público de releases.
-- Quem controla a conta controla o que é instalado em toda a equipe: use
-  **autenticação em dois fatores** e restrinja quem pode criar tags/releases.
+O workflow `.github/workflows/release.yml` roda numa máquina Windows do
+GitHub: testes → `.exe` → `.msi` (WiX 5, licença MS-RL) → publica a versão
+nos dois repositórios. O app instalado consulta, sem senha:
+`https://github.com/<dono>/NetTerminal-releases/releases/latest/download/versao.json`
+
+### Configuração (uma vez só)
+
+1. **Criar o repositório público:** github.com → *New repository* → nome
+   `NetTerminal-releases` → **Public** → marcar **Add a README file** (ele
+   precisa ter pelo menos um commit no branch `main`).
+2. **Criar o token** (fica guardado só no GitHub, nunca no app): *Settings da
+   conta → Developer settings → Personal access tokens → Fine-grained tokens →
+   Generate new token*:
+   - *Repository access:* **Only select repositories** → `NetTerminal-releases`
+   - *Permissions → Repository permissions → Contents:* **Read and write**
+   - *Expiration:* 1 ano (anote para renovar)
+3. **Guardar o token como segredo** no repositório **privado** `NetTerminal`:
+   *Settings → Secrets and variables → Actions → New repository secret* →
+   nome `RELEASES_TOKEN` → colar o token. (Não cole o token em nenhum outro lugar.)
+4. Se o repositório público tiver outro nome/dono, crie em *Variables* a
+   variável `RELEASES_REPO` com `dono/nome`.
+
+### Lançar uma versão
+
+1. Atualize `APP_VERSION` em `netterminal/__init__.py`, o `pyproject.toml` e
+   o `CHANGELOG.md`; faça commit e *Push* no GitHub Desktop.
+2. No repositório privado: *Releases → Draft a new release → Choose a tag →*
+   digite `vX.Y.Z` (igual ao `APP_VERSION`) → *Create new tag* → *Publish release*.
+3. Acompanhe em *Actions* (~3 min). Ao terminar, a versão aparece no
+   `NetTerminal-releases` e todos os apps instalados atualizam ao abrir (ou em
+   *Ajuda → Verificar atualizações agora*).
+
+**Primeira instalação na equipe:** baixe o `.msi` da página de releases
+pública e instale normalmente (não pede administrador). A partir daí, as
+atualizações são automáticas.
+
+### Cuidados de segurança
+- Quem consegue publicar no `NetTerminal-releases` consegue instalar programas
+  em todas as máquinas da equipe. Por isso: **autenticação em dois fatores** na
+  conta, token restrito só a esse repositório e com validade, e ninguém mais
+  com acesso de escrita.
+- Se o GitHub oferecer **releases imutáveis** (*Settings → General*), ative no
+  repositório público: impede trocar o instalador de uma versão já publicada.
+- O instalador público contém o programa compilado; não coloque segredos no
+  código nem no `.env` (o build só grava nele o endereço de atualização).
 - Quando houver certificado de assinatura de código, ative
   `UPDATE_REQUIRE_SIGNATURE=true` — protege mesmo se a conta for invadida.
 

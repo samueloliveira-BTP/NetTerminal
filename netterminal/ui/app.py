@@ -562,6 +562,29 @@ class OLTManagerApp(ctk.CTk):
                 self.executar_na_ui(lambda: self._oferecer_atualizacao(info))
         threading.Thread(target=worker, daemon=True, name="verifica-update").start()
 
+    def verificar_atualizacao_manual(self):
+        """Ajuda > Verificar atualizações agora: consulta e SEMPRE dá um retorno."""
+        def worker():
+            resultado = updater.consultar_atualizacao()
+            self.executar_na_ui(lambda: self._mostrar_resultado_consulta(resultado))
+        threading.Thread(target=worker, daemon=True, name="verifica-update-manual").start()
+
+    def _mostrar_resultado_consulta(self, resultado):
+        if resultado.status == "nova":
+            self._oferecer_atualizacao(resultado.info)
+        elif resultado.status == "atualizado":
+            msgbox(self, "info", "Atualizações", f"Você já está na versão mais recente ({APP_VERSION}).")
+        elif resultado.status == "sem_url":
+            msgbox(self, "info", "Atualizações",
+                   "A atualização automática não está configurada nesta instalação (sem UPDATE_CHECK_URL).")
+        elif resultado.status == "recusada":
+            msgbox(self, "error", "Atualizações",
+                   "O servidor respondeu, mas a atualização foi recusada por segurança.\nDetalhes no app.log.")
+        else:
+            msgbox(self, "warning", "Atualizações",
+                   "Não foi possível consultar o servidor de atualizações agora.\n"
+                   "Verifique a conexão com a internet e tente de novo mais tarde.")
+
     def _oferecer_atualizacao(self, info):
         notas = f"\n\n{info.notas}" if info.notas else ""
         if info.obrigatoria:

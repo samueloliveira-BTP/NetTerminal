@@ -55,7 +55,8 @@ class BarraMenu:
                 None,
                 ("🔒 Senha de Admin e Permissões", lambda: admin.abrir_painel_seguranca(app)),
             ]),
-            ("Ajuda", 80, [
+            ("Ajuda", 90, [
+                ("🔄 Verificar atualizações agora", app.verificar_atualizacao_manual),
                 ("⌨️ Atalhos de teclado", app.mostrar_atalhos),
                 ("ℹ️ Sobre o NetTerminal", app.mostrar_sobre),
                 ("📂 Abrir pasta de dados", app.abrir_pasta_dados),

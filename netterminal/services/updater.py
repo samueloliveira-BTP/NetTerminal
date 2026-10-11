@@ -112,24 +112,41 @@ def interpretar_resposta(dados, url_consulta):
     return info
 
 
-def verificar_atualizacao():
-    """Devolve InfoAtualizacao se houver versão mais nova; None caso contrário
-    (sem URL configurada, sem novidade, servidor fora ou resposta recusada)."""
+@dataclass
+class ResultadoConsulta:
+    """status: "sem_url" | "atualizado" | "nova" | "indisponivel" | "recusada" """
+    status: str
+    info: InfoAtualizacao = None
+    detalhe: str = ""
+
+
+def consultar_atualizacao():
+    """Consulta o servidor e diz exatamente o que aconteceu (usado pela
+    verificação manual em Ajuda > Verificar atualizações)."""
     url = config.UPDATE_CHECK_URL
     if not url:
-        return None
+        return ResultadoConsulta("sem_url")
     try:
         _exigir_https(url)
         with _opener.open(url, timeout=8) as resp:
             dados = json.loads(resp.read(_TAMANHO_MAXIMO_JSON).decode("utf-8"))
         info = interpretar_resposta(dados, url)
-        if comparar_versoes(info.versao, APP_VERSION):
-            return info
     except AtualizacaoRecusada as e:
         log.error(f"Atualização recusada: {e}")
+        return ResultadoConsulta("recusada", detalhe=str(e))
     except Exception as e:
         log.info(f"Verificação de atualização indisponível: {e}")
-    return None
+        return ResultadoConsulta("indisponivel", detalhe=str(e))
+    if comparar_versoes(info.versao, APP_VERSION):
+        return ResultadoConsulta("nova", info)
+    return ResultadoConsulta("atualizado", info)
+
+
+def verificar_atualizacao():
+    """Devolve InfoAtualizacao se houver versão mais nova; None caso contrário
+    (sem URL configurada, sem novidade, servidor fora ou resposta recusada)."""
+    resultado = consultar_atualizacao()
+    return resultado.info if resultado.status == "nova" else None
 
 
 def _sha256_arquivo(caminho):

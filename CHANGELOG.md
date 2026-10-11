@@ -1,5 +1,14 @@
 # Histórico de versões
 
+## 2.1.1 — 2026-10-11
+
+- Distribuição pelo modelo de dois repositórios: código privado
+  (`NetTerminal`) e instaladores públicos (`NetTerminal-releases`).
+  **Primeira versão para distribuir à equipe** — a 2.1.0 apontava para o
+  repositório privado e não receberia atualizações.
+- Novo: *Ajuda → Verificar atualizações agora*, com retorno claro (já
+  atualizado, versão nova, servidor indisponível ou atualização recusada).
+
 ## 2.1.0 — 2026-10-11
 
 ### Novidades

@@ -274,6 +274,40 @@ class TestTLSAtualizacao(unittest.TestCase):
         self.assertFalse(ctx.verify_flags & ssl.VERIFY_X509_STRICT)  # sem o modo que recusa o GitHub
 
 
+class TestConsultaManual(unittest.TestCase):
+    URL = "https://github.com/dono/NetTerminal-releases/releases/latest/download/versao.json"
+
+    def _resposta(self, versao):
+        corpo = json.dumps({"versao": versao, "sha256": "b" * 64,
+                            "url_download": f"https://github.com/dono/NetTerminal-releases/releases/download/v{versao}/NetTerminal-{versao}.msi"}).encode()
+
+        class _Resp:
+            def read(self, n=-1): return corpo
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+        return _Resp()
+
+    def _consultar(self, **patch_open):
+        from unittest import mock
+        from netterminal import config
+        with mock.patch.object(config, "UPDATE_CHECK_URL", self.URL), \
+                mock.patch.object(updater._opener, "open", **patch_open):
+            return updater.consultar_atualizacao()
+
+    def test_status(self):
+        from unittest import mock
+        from netterminal import APP_VERSION, config
+        self.assertEqual(self._consultar(return_value=self._resposta("99.0.0")).status, "nova")
+        self.assertEqual(self._consultar(return_value=self._resposta(APP_VERSION)).status, "atualizado")
+        self.assertEqual(self._consultar(side_effect=OSError("404")).status, "indisponivel")
+        self.assertEqual(self._consultar(return_value=self._resposta("99.0.0.x")).status, "atualizado")
+        with mock.patch.object(config, "UPDATE_CHECK_URL", ""):
+            self.assertEqual(updater.consultar_atualizacao().status, "sem_url")
+        # Repositório de releases público: download no mesmo host (github.com) é aceito
+        info = self._consultar(return_value=self._resposta("99.0.0")).info
+        self.assertTrue(info.url_download.endswith("NetTerminal-99.0.0.msi"))
+
+
 class TestInstalacaoSilenciosa(unittest.TestCase):
     def test_comando_msi(self):
         cmd = updater.comando_instalacao(r"C:\temp\NetTerminal-2.1.0.msi", r"C:\Apps\NetTerminal\NETerminal.exe")

@@ -43,6 +43,17 @@ class BarraMenu:
                 ("📜 Histórico de Comandos", lambda: historico.abrir(app)),
                 ("📊 Dashboard de Uso", lambda: dashboard.abrir(app)),
             ]),
+            ("Exibir", 80, [
+                # (rótulo, comando, {"var": BooleanVar marcada, "atalho": texto})
+                ("Lista de equipamentos", lambda: app.definir_lista_visivel(app.var_lista.get()),
+                 {"var": app.var_lista, "atalho": "Ctrl+Shift+L"}),
+                ("Barras dos terminais", lambda: app.definir_barras_visiveis(app.var_barras.get()),
+                 {"var": app.var_barras, "atalho": "Ctrl+Shift+B"}),
+                ("Modo foco (só terminais)", app.alternar_modo_foco, {"var": app.var_foco, "atalho": "F11"}),
+                None,
+                ("⤢ Expandir/restaurar terminal ativo", app.alternar_zoom, {"atalho": "Ctrl+Shift+M"}),
+                ("↔ Restaurar divisões (50/50)", app.resetar_divisoes),
+            ]),
             ("Configurações", 160, [
                 ("🔑 Credenciais Globais", lambda: credenciais.abrir(app)),
                 ("🎨 Aparência (tema, fonte, cores)", lambda: aparencia.abrir(app)),
@@ -68,8 +79,14 @@ class BarraMenu:
         for item in itens:
             if item is None:
                 menu.add_separator()
+                continue
+            rotulo, comando = item[0], item[1]
+            extras = item[2] if len(item) > 2 else {}
+            if "var" in extras:
+                menu.add_checkbutton(label=rotulo, command=comando, variable=extras["var"],
+                                     accelerator=extras.get("atalho", ""))
             else:
-                menu.add_command(label=item[0], command=item[1])
+                menu.add_command(label=rotulo, command=comando, accelerator=extras.get("atalho", ""))
         btn = ctk.CTkButton(self.barra, text=titulo, width=largura, height=34, corner_radius=0,
                             fg_color="transparent", font=ctk.CTkFont(size=13))
         btn.configure(command=lambda: menu.tk_popup(btn.winfo_rootx(), btn.winfo_rooty() + btn.winfo_height()))

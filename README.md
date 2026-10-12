@@ -9,6 +9,7 @@ automática segura.
 | Recurso | Onde fica |
 |---|---|
 | Terminal SSH/Telnet em abas, **tela dividida** (1, 2 ou 4 painéis) | Canto superior direito da área de abas |
+| **Divisórias arrastáveis**, **expandir terminal** (⤢), **ocultar barras** (▴), **ocultar lista** (◧), **modo foco** (⛶ / F11) | Menu **Exibir** e botões ao lado das abas |
 | **Localizar texto na aba** | `Ctrl+Shift+F` ou botão 🔍 no terminal |
 | **Fonte do terminal** | `Ctrl + roda do mouse` ou Configurações > Aparência |
 | **Tema claro/escuro** | Configurações > Aparência |

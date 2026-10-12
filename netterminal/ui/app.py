@@ -19,6 +19,7 @@ from netterminal.services import auditoria, transferencia, updater
 from netterminal.ui.dialogs import acesso_rapido, equipamento, ferramentas_rede
 from netterminal.ui.dialogs.admin import exigir_permissao
 from netterminal.ui.menu import BarraMenu
+from netterminal.ui.paineis import LayoutPaineis
 from netterminal.ui.splash import mostrar_splash
 from netterminal.ui.tema import (COR_DESCONHECIDO, COR_OFFLINE, COR_ONLINE, FONTE_MAX, FONTE_MIN,
                                  aplicar_estilo_ttk, carregar_cores, carregar_fonte, carregar_tema, paleta_atual)
@@ -68,8 +69,13 @@ Dentro do terminal:
   Botão direito / Ctrl+V / Shift+Insert   colar
   Ctrl+C            copia se houver seleção; senão envia "interromper" ao equipamento
 
-Tela dividida: escolha 1, 2 ou 4 painéis no canto superior direito.
-Clique num terminal para torná-lo o painel ativo; a próxima aba abre nele."""
+Tela dividida e exibição (funcionam também dentro do terminal):
+  Ctrl+Shift+M      expandir/restaurar o terminal ativo (ou 2 cliques na aba, ou botão ⤢)
+  Ctrl+Shift+B      ocultar/mostrar as barras de todos os terminais (▴ em cada um)
+  Ctrl+Shift+L      ocultar/mostrar a lista de equipamentos (botão ◧)
+  F11               modo foco: só os terminais (botão ⛶)
+  Arrastar a linha entre os terminais muda o tamanho; 2 cliques nela volta a 50/50.
+  Escolha 1, 2 ou 4 painéis no canto superior direito; clique num terminal para ativá-lo."""
 
 
 class OLTManagerApp(ctk.CTk):
@@ -99,6 +105,13 @@ class OLTManagerApp(ctk.CTk):
         self._equipamentos = {}        # id -> Equipamento (o que está na árvore)
         self._fila_ui = queue.Queue()  # funções vindas de threads, executadas na thread da UI
         self._status_mudou = threading.Event()
+        # Exibição: terminal expandido, modo foco (F11), lista e barras visíveis
+        self._zoom = None
+        self._foco = None
+        self.barras_visiveis = self.db.get_config("exibir_barras", "True") == "True"
+        self.var_lista = tk.BooleanVar(value=self.db.get_config("exibir_lista", "True") == "True")
+        self.var_barras = tk.BooleanVar(value=self.barras_visiveis)
+        self.var_foco = tk.BooleanVar(value=False)
 
         ctk.set_appearance_mode(self.tema)
         aplicar_estilo_ttk(self.cores)
@@ -107,6 +120,7 @@ class OLTManagerApp(ctk.CTk):
                                      metodo=config.MONITOR_METODO)
         self.menu_barra = BarraMenu(self)
         self._criar_layout()
+        self.definir_lista_visivel(self.var_lista.get(), salvar=False)
         self.definir_layout(self.db.get_config("layout_modo", "▣ 1"), salvar=False)
         self.carregar_lista()
         self.monitor.iniciar()
@@ -118,6 +132,11 @@ class OLTManagerApp(ctk.CTk):
         self.bind_all("<Control-f>", lambda e: self.search_entry.focus_set())
         self.bind_all("<Control-t>", lambda e: self.conectar_selecionado())
         self.bind_all("<Control-w>", lambda e: self._fechar_aba_atual())
+        # Exibição (também funcionam dentro do terminal — ver TerminalTab)
+        self.bind_all("<F11>", lambda e: self.alternar_modo_foco())
+        self.bind_all("<Control-L>", lambda e: self.alternar_lista())      # Ctrl+Shift+L
+        self.bind_all("<Control-B>", lambda e: self.alternar_barras())     # Ctrl+Shift+B
+        self.bind_all("<Control-M>", lambda e: self.alternar_zoom())       # Ctrl+Shift+M
         self.protocol("WM_DELETE_WINDOW", self._ao_fechar)
         mostrar_splash(self)
 
@@ -221,6 +240,11 @@ class OLTManagerApp(ctk.CTk):
         topo_abas.pack(fill="x", padx=5, pady=2)
         self.seletor_layout = ctk.CTkSegmentedButton(topo_abas, values=list(LAYOUTS), command=self.definir_layout)
         self.seletor_layout.pack(side="right", padx=(6, 0))
+        estilo_exibir = dict(width=32, height=28, fg_color="transparent", border_width=1, border_color="#555555")
+        self.btn_foco = ctk.CTkButton(topo_abas, text="⛶", command=self.alternar_modo_foco, **estilo_exibir)
+        self.btn_foco.pack(side="right", padx=(6, 0))
+        self.btn_lista = ctk.CTkButton(topo_abas, text="◧", command=self.alternar_lista, **estilo_exibir)
+        self.btn_lista.pack(side="right", padx=(6, 0))
         # Lista de todas as abas: só aparece quando elas não cabem na largura
         self.btn_lista_abas = ctk.CTkButton(topo_abas, text="☰ ▾", width=86, height=28, fg_color="transparent",
                                             border_width=1, border_color="#555555", command=self._menu_lista_abas)
@@ -230,7 +254,7 @@ class OLTManagerApp(ctk.CTk):
         canvas_abas.bind("<Configure>", lambda e: self.after(80, self._ajustar_barra_abas), add="+")
         # (A roda do mouse sobre as abas já rola na horizontal — comportamento do CTkScrollableFrame)
 
-        rodape = ctk.CTkFrame(self.main_area, height=20, fg_color="transparent")
+        self.rodape = rodape = ctk.CTkFrame(self.main_area, height=20, fg_color="transparent")
         rodape.pack(side="bottom", fill="x", padx=10, pady=(2, 5))
         ctk.CTkLabel(rodape, text=f"Usuário: {auditoria.usuario_atual()}", font=("Consolas", 11),
                      text_color="gray").pack(side="left", padx=5)
@@ -238,6 +262,7 @@ class OLTManagerApp(ctk.CTk):
                      font=("Consolas", 11), text_color="gray").pack(side="right", padx=5)
         self.tab_content_frame = ctk.CTkFrame(self.main_area, fg_color="transparent")
         self.tab_content_frame.pack(expand=True, fill="both")
+        self.layout_paineis = LayoutPaineis(self.tab_content_frame, self.db, lambda: self.cores["btn_bg"])
         self._aplicar_cores_moldura()
 
     def _aplicar_cores_moldura(self):
@@ -259,6 +284,7 @@ class OLTManagerApp(ctk.CTk):
         for term in self._todos_terminais():
             term.aplicar_cores()
             term.aplicar_fonte(self.fonte_terminal)
+        self.layout_paineis.aplicar_cores()
         self._redesenhar_paineis()
 
     def alterar_fonte_terminal(self, passo):
@@ -459,6 +485,7 @@ class OLTManagerApp(ctk.CTk):
         lbl = ctk.CTkLabel(moldura, text=texto_aba, font=ctk.CTkFont(size=12, weight="bold"))
         lbl.pack(side="left", padx=(0, 4), pady=1)
         lbl.bind("<Button-1>", lambda e: self.selecionar_aba(nome))
+        lbl.bind("<Double-Button-1>", lambda e: self.alternar_zoom(nome))  # 2 cliques na aba = expandir
         ctk.CTkButton(moldura, text="✖", width=18, height=18, corner_radius=9, fg_color="transparent",
                       hover_color="#8B0000", command=lambda: self.fechar_aba(nome)).pack(side="right", padx=(0, 5), pady=1)
         ctk.CTkButton(moldura, text="↗", width=18, height=18, corner_radius=9, fg_color="transparent",
@@ -475,6 +502,7 @@ class OLTManagerApp(ctk.CTk):
             rotulo = "▣ 1"
         self.seletor_layout.set(rotulo)
         self.max_paineis, self.orientacao = LAYOUTS[rotulo]
+        self._zoom = None
         # Mantém as visíveis e completa com as demais abas, na ordem em que foram abertas
         visiveis = [n for n in self.paineis if n in self.abas]
         visiveis += [n for n in self.abas if n not in visiveis]
@@ -485,18 +513,20 @@ class OLTManagerApp(ctk.CTk):
         self._redesenhar_paineis()
 
     def _redesenhar_paineis(self):
-        frame = self.tab_content_frame
-        for dados in self.abas.values():
-            dados["frame"].grid_forget()
-        posicoes, (linhas, colunas) = posicoes_paineis(len(self.paineis), self.orientacao)
-        for i in range(2):  # zera a grade anterior e liga só as linhas/colunas usadas
-            frame.grid_rowconfigure(i, weight=1 if i < linhas else 0, uniform="linhas" if i < linhas else "")
-            frame.grid_columnconfigure(i, weight=1 if i < colunas else 0, uniform="colunas" if i < colunas else "")
-        varios = len(self.paineis) > 1
-        for indice, (nome, (linha, coluna, alt, larg)) in enumerate(zip(self.paineis, posicoes)):
+        if self._zoom not in self.paineis:
+            self._zoom = None
+        if self._zoom:
+            # Terminal expandido: ocupa a área toda; os outros continuam conectados, só escondidos
+            nomes, posicoes, grade = [self._zoom], [(0, 0, 1, 1)], (1, 1)
+        else:
+            nomes = list(self.paineis)
+            posicoes, grade = posicoes_paineis(len(nomes), self.orientacao)
+        self.layout_paineis.definir([self.abas[n]["frame"] for n in nomes], posicoes, grade)
+        varios = len(nomes) > 1
+        for indice, nome in enumerate(self.paineis):
             term = self.abas[nome]["frame"]
-            term.grid(row=linha, column=coluna, rowspan=alt, columnspan=larg, sticky="nsew", padx=2, pady=2)
             term.marcar_ativo(varios and indice == self.painel_ativo)
+            term.marcar_zoom(nome == self._zoom)
 
         paleta = paleta_atual()
         ativo = self.paineis[self.painel_ativo] if self.paineis else None
@@ -564,8 +594,79 @@ class OLTManagerApp(ctk.CTk):
             self.painel_ativo = len(self.paineis) - 1
         else:
             self.paineis[self.painel_ativo] = nome
+        if self._zoom:
+            self._zoom = nome  # no modo expandido, trocar de aba expande a aba escolhida
         self._redesenhar_paineis()
         self.abas[nome]["frame"].terminal_text.focus_set()
+
+    # ==================================================== exibição / foco
+    def alternar_zoom(self, nome=None):
+        """Expande o terminal (ocupa toda a área) ou volta para a tela dividida."""
+        nome = nome or (self.paineis[self.painel_ativo] if self.paineis else None)
+        if nome not in self.abas:
+            return
+        if self._zoom == nome:
+            self._zoom = None
+        else:
+            if nome not in self.paineis:
+                self.selecionar_aba(nome)
+            self._zoom = nome
+            self.painel_ativo = self.paineis.index(nome)
+        self._redesenhar_paineis()
+        self.abas[nome]["frame"].terminal_text.focus_set()
+
+    def alternar_zoom_terminal(self, term):
+        for nome, dados in self.abas.items():
+            if dados["frame"] is term:
+                self.alternar_zoom(nome)
+                return
+
+    def definir_lista_visivel(self, visivel, salvar=True):
+        """Mostra/esconde a lista de equipamentos (o terminal ganha a largura toda)."""
+        self.var_lista.set(visivel)
+        esta_visivel = str(self.sidebar) in [str(p) for p in self.paned_window.panes()]
+        if visivel and not esta_visivel:
+            self.paned_window.add(self.sidebar, before=self.main_area, minsize=280)
+        elif not visivel and esta_visivel:
+            self.paned_window.forget(self.sidebar)
+        self.btn_lista.configure(text="◧" if visivel else "▷")
+        if salvar:
+            self.db.set_config("exibir_lista", "True" if visivel else "False")
+
+    def definir_barras_visiveis(self, visivel, salvar=True):
+        """Mostra/esconde a barra (status, macros, botões) de TODOS os terminais."""
+        self.var_barras.set(visivel)
+        self.barras_visiveis = visivel
+        for term in self._todos_terminais():
+            term.definir_barra_visivel(visivel)
+        if salvar:
+            self.db.set_config("exibir_barras", "True" if visivel else "False")
+
+    def alternar_lista(self):
+        self.definir_lista_visivel(not self.var_lista.get())
+
+    def alternar_barras(self):
+        self.definir_barras_visiveis(not self.var_barras.get())
+
+    def alternar_modo_foco(self):
+        """F11: deixa só os terminais (sem lista, barras e rodapé). F11 de novo restaura."""
+        if self._foco is None:
+            self._foco = (self.var_lista.get(), self.var_barras.get())
+            self.definir_lista_visivel(False, salvar=False)
+            self.definir_barras_visiveis(False, salvar=False)
+            self.rodape.pack_forget()
+            self.btn_foco.configure(fg_color=self.cores["btn_bg"])
+        else:
+            lista, barras = self._foco
+            self._foco = None
+            self.definir_lista_visivel(lista, salvar=False)
+            self.definir_barras_visiveis(barras, salvar=False)
+            self.rodape.pack(side="bottom", fill="x", padx=10, pady=(2, 5), before=self.tab_content_frame)
+            self.btn_foco.configure(fg_color="transparent")
+        self.var_foco.set(self._foco is not None)
+
+    def resetar_divisoes(self):
+        self.layout_paineis.resetar()
 
     def ao_focar_terminal(self, term):
         """Clicar dentro de um terminal torna o painel dele o ativo."""
@@ -581,6 +682,8 @@ class OLTManagerApp(ctk.CTk):
         dados = self.abas.pop(nome, None)
         if not dados:
             return
+        if self._zoom == nome:
+            self._zoom = None
         dados["frame"].destroy()  # encerra a conexão e registra a duração
         dados["btn"].destroy()
         if nome in self.paineis:

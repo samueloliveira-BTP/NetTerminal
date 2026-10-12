@@ -118,17 +118,33 @@ class TerminalTab(ctk.CTkFrame):
                                             fg_color=cores["btn_bg"], hover_color=cores["btn_hover"],
                                             font=ctk.CTkFont(size=12), command=self.reconectar)
         self._btn_lupa = ctk.CTkButton(acoes, text="🔍", width=30, command=self.mostrar_busca, **estilo)
-        self._btn_lupa.pack(side="left", padx=1)
-        ctk.CTkButton(acoes, text="ONU", width=46, command=lambda: provisionar_onu.abrir(self.app, self),
-                      **estilo).pack(side="left", padx=1)
-        ctk.CTkButton(acoes, text="Ping", width=46, command=lambda: ferramentas_rede.abrir(self.app, self.eq.ip, "ping"),
-                      **estilo).pack(side="left", padx=1)
-        self._btn_tracert = ctk.CTkButton(acoes, text="Tracert", width=58,
-                                          command=lambda: ferramentas_rede.abrir(self.app, self.eq.ip, "tracert"),
+        self._abrir_onu = lambda: provisionar_onu.abrir(self.app, self)
+        self._abrir_ping = lambda: ferramentas_rede.abrir(self.app, self.eq.ip, "ping")
+        self._abrir_tracert = lambda: ferramentas_rede.abrir(self.app, self.eq.ip, "tracert")
+        self._btn_onu = ctk.CTkButton(acoes, text="ONU", width=46, command=self._abrir_onu, **estilo)
+        self._btn_ping = ctk.CTkButton(acoes, text="Ping", width=46, command=self._abrir_ping, **estilo)
+        self._btn_tracert = ctk.CTkButton(acoes, text="Tracert", width=58, command=self._abrir_tracert, **estilo)
+        # Em painel muito estreito, 🔍/ONU/Ping/Tracert vão para este menu "⋯"
+        self._btn_mais_acoes = ctk.CTkButton(acoes, text="⋯", width=30, command=self._menu_acoes, **estilo)
+        self._btn_zoom = ctk.CTkButton(acoes, text="⤢", width=28, command=lambda: self.app.alternar_zoom_terminal(self),
+                                       **estilo)
+        self._btn_ocultar = ctk.CTkButton(acoes, text="▴", width=28, command=lambda: self.definir_barra_visivel(False),
                                           **estilo)
-        self._btn_tracert.pack(side="left", padx=1)
         self._acoes = acoes
+        self._nivel_compacto = None
         self._compacto = False
+        self._arrumar_acoes(0)
+
+        # Faixa fina mostrada quando a barra está oculta: cor = status; clique traz a barra de volta
+        self._faixa = tk.Frame(self, height=12, cursor="hand2", bg=paleta_atual()["divisoria"])
+        self._faixa_dot = tk.Label(self._faixa, text="●", font=("Segoe UI", 7), fg=COR_DESCONHECIDO,
+                                   bg=paleta_atual()["divisoria"], cursor="hand2")
+        self._faixa_dot.pack(side="left", padx=(6, 2))
+        self._faixa_txt = tk.Label(self._faixa, text=f"{self.eq.nome}   ▾ mostrar barra", font=("Segoe UI", 7),
+                                   fg="#9a9a9a", bg=paleta_atual()["divisoria"], cursor="hand2")
+        self._faixa_txt.pack(side="left")
+        for w in (self._faixa, self._faixa_dot, self._faixa_txt):
+            w.bind("<Button-1>", lambda e: self.definir_barra_visivel(True))
 
         # Painel para preencher variáveis [VAR] das macros (fica oculto até precisar)
         self.dynamic_bar = ctk.CTkFrame(self, height=35)
@@ -158,6 +174,15 @@ class TerminalTab(ctk.CTkFrame):
         t.bind("<Control-c>", self._ctrl_c)
         t.bind("<Control-F>", lambda e: self.mostrar_busca() or "break")  # Ctrl+Shift+F
         t.bind("<FocusIn>", lambda e: self.app.ao_focar_terminal(self))
+        # Recalcula a barra quando o PAINEL muda de tamanho (divisórias, tela dividida, janela)
+        t.bind("<Configure>", self._agendar_distribuir_macros, add="+")
+        # Atalhos de exibição (com Shift, para não conflitar com Ctrl+B/L/M do equipamento)
+        t.bind("<F11>", lambda e: self.app.alternar_modo_foco() or "break")
+        t.bind("<Control-L>", lambda e: self.app.alternar_lista() or "break")
+        t.bind("<Control-B>", lambda e: self.app.alternar_barras() or "break")
+        t.bind("<Control-M>", lambda e: self.app.alternar_zoom_terminal(self) or "break")
+        if not self.app.barras_visiveis:
+            self.definir_barra_visivel(False)
 
     def _definir_status(self, texto):
         """Status curto com bolinha colorida (o IP/nome já aparece na aba)."""
@@ -180,13 +205,29 @@ class TerminalTab(ctk.CTkFrame):
             curto, cor = texto[:20], COR_DESCONHECIDO
         self.status_label.configure(text=curto)
         self.status_dot.configure(text_color=cor)
+        self._faixa_dot.configure(fg=cor)
         self._agendar_distribuir_macros()
 
-    def _mostrar_reconectar(self, visivel):
+    def definir_barra_visivel(self, visivel):
+        """Esconde a barra do terminal (fica só uma faixa fina) ou mostra de volta."""
+        # A barra/faixa sempre vai para o TOPO (antes de busca, painel de variáveis e terminal)
+        sai, entra = (self._faixa, self.barra) if visivel else (self.barra, self._faixa)
+        sai.pack_forget()
+        if entra.winfo_manager() != "pack":
+            topo = self.pack_slaves()[0]
+            if visivel:
+                entra.pack(fill="x", padx=4, pady=(4, 2), before=topo)
+            else:
+                entra.pack(fill="x", before=topo)
         if visivel:
-            self.btn_reconectar.pack(side="left", padx=(1, 4), before=self._btn_lupa)
-        else:
-            self.btn_reconectar.pack_forget()
+            self._agendar_distribuir_macros()
+
+    def marcar_zoom(self, expandido):
+        self._btn_zoom.configure(text="⤡" if expandido else "⤢")
+
+    def _mostrar_reconectar(self, visivel):
+        self._reconectar_visivel = visivel
+        self._arrumar_acoes(self._nivel_compacto or 0)
         self._agendar_distribuir_macros()
 
     def marcar_ativo(self, ativo):
@@ -198,6 +239,9 @@ class TerminalTab(ctk.CTkFrame):
         self.btn_reconectar.configure(fg_color=cores["btn_bg"], hover_color=cores["btn_hover"])
         self.usar_cores = str(self.db.get_config("syntax_highlighting", "True")) == "True"
         self._configurar_tags_busca()
+        fundo = paleta_atual()["divisoria"]
+        for w in (self._faixa, self._faixa_dot, self._faixa_txt):
+            w.configure(bg=fundo)
         self.carregar_botoes_macro(self.combo_marca.get())
 
     def aplicar_fonte(self, tamanho):
@@ -714,15 +758,52 @@ class TerminalTab(ctk.CTkFrame):
             self._btn_mais_macros.pack(side="left", padx=3, pady=2)
 
     def _ajustar_modo_compacto(self):
-        """Painéis estreitos (tela dividida): botões de ação encolhem para sobrar
-        espaço para as macros."""
-        compacto = self.winfo_width() < 760
-        if compacto == self._compacto:
+        """A barra se adapta à largura do painel (tela dividida / divisórias arrastadas):
+            nível 0 (>= 760 px): completa
+            nível 1 (< 760 px):  botões com texto curto ("↻", "Trace")
+            nível 2 (< 560 px):  sem marca, status só com a bolinha, ações no menu "⋯"
+        Os botões ⤢ (expandir) e ▴ (ocultar barra) ficam sempre visíveis."""
+        largura = self.winfo_width()
+        if largura <= 1:
             return
-        self._compacto = compacto
-        self.btn_reconectar.configure(text="↻" if compacto else "↻ Reconectar", width=30 if compacto else 96)
-        self._btn_tracert.configure(text="Trace" if compacto else "Tracert", width=46 if compacto else 58)
-        self.combo_marca.configure(width=96 if compacto else 118)
+        nivel = 0 if largura >= 760 else 1 if largura >= 560 else 2
+        if nivel == self._nivel_compacto:
+            return
+        self._compacto = nivel > 0
+        self.btn_reconectar.configure(text="↻" if nivel else "↻ Reconectar", width=30 if nivel else 96)
+        self._btn_tracert.configure(text="Trace" if nivel else "Tracert", width=46 if nivel else 58)
+        self.combo_marca.configure(width=96 if nivel else 118)
+        if nivel == 2:
+            self.combo_marca.grid_remove()
+            self.status_label.pack_forget()
+        else:
+            self.combo_marca.grid()
+            if not self.status_label.winfo_ismapped():
+                self.status_label.pack(side="left", padx=(2, 0))
+        self._arrumar_acoes(nivel)
+
+    def _arrumar_acoes(self, nivel):
+        """(Re)empacota os botões de ação na ordem certa para o nível de compactação."""
+        self._nivel_compacto = nivel
+        for botao in self._acoes.winfo_children():
+            botao.pack_forget()
+        ordem = [self.btn_reconectar] if getattr(self, "_reconectar_visivel", False) else []
+        if nivel == 2:
+            ordem += [self._btn_mais_acoes]
+        else:
+            ordem += [self._btn_lupa, self._btn_onu, self._btn_ping, self._btn_tracert]
+        ordem += [self._btn_zoom, self._btn_ocultar]
+        for botao in ordem:
+            botao.pack(side="left", padx=(4, 1) if botao is self._btn_zoom else 1)
+
+    def _menu_acoes(self):
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(label="🔍 Localizar na aba", command=self.mostrar_busca)
+        menu.add_command(label="🧙 Assistente de ONU", command=self._abrir_onu)
+        menu.add_command(label="📶 Ping", command=self._abrir_ping)
+        menu.add_command(label="🧭 Traceroute", command=self._abrir_tracert)
+        botao = self._btn_mais_acoes
+        menu.tk_popup(botao.winfo_rootx(), botao.winfo_rooty() + botao.winfo_height())
 
     def _menu_macros_ocultas(self):
         menu = tk.Menu(self, tearoff=0)

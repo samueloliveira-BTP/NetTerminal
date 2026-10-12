@@ -22,6 +22,18 @@
   - abas mostram só o nome do equipamento; a barra de rolagem das abas e o
     botão "☰ N abas ▾" só aparecem quando as abas não cabem.
 - `tools/capturar_layouts.py`: teste visual automático dos formatos.
+- **Terminais ajustáveis:**
+  - divisórias arrastáveis entre os terminais (2 cliques = volta a 50/50;
+    posição salva);
+  - **expandir** um terminal para a área toda (botão ⤢, 2 cliques na aba ou
+    Ctrl+Shift+M) — os outros continuam conectados;
+  - **ocultar a barra** de cada terminal (botão ▴) ou de todos
+    (Ctrl+Shift+B); fica uma faixa fina com o status, que traz a barra de volta;
+  - **ocultar a lista de equipamentos** (botão ◧ / Ctrl+Shift+L);
+  - **modo foco** (botão ⛶ / F11): só os terminais;
+  - novo menu **Exibir** com todas essas opções;
+  - barra do terminal com 3 níveis de compactação conforme a largura do
+    painel (no mais estreito, ações vão para o menu "⋯").
 - **Monitor de status por ping (ICMP)** em vez de abrir conexão na porta de
   login a cada 15 s. O método antigo fazia equipamentos Huawei bloquearem o
   IP do técnico ("The IP has been blocked and you cannot log on it") e enchia
